@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+dist-check*/
+dist-navigation-*/
+web-build/
+expo-env.d.ts
+
+# Native generated folders
+/ios/
+/android/
+.kotlin/
+.eas/
+
+# Signing and credentials
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.certSigningRequest
+google-services.json
+GoogleService-Info.plist
+
+# Logs and caches
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local tooling
+.gitnexus/
+.claude/
+AGENTS.md
+CLAUDE.md
