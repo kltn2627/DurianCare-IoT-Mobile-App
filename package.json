@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
+    "start:lan": "expo start --lan",
+    "start:tunnel": "expo start --tunnel",
+    "start:clear": "expo start --lan --clear",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
