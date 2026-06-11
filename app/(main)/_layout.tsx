@@ -1,9 +1,11 @@
-﻿import { Tabs } from "expo-router";
-import {  CalendarDays,
-  Camera,
+import { Tabs } from "expo-router";
+import {
+  BookOpen,
+  CalendarDays,
   LayoutDashboard,
   MessageCircle,
-  MoreHorizontal,} from "lucide-react-native";
+  MoreHorizontal,
+} from "lucide-react-native";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 import { useSession } from "@/src/session/SessionContext";
@@ -49,10 +51,10 @@ export default function DurianCareMainTabs() {
       />
 
       <Tabs.Screen
-        name="scanner"
+        name="knowledge"
         options={{
-          title: "AI Scanner",
-          tabBarIcon: ({ color, size }) => <Camera color={color} size={size} />,
+          title: "Tri thức",
+          tabBarIcon: ({ color, size }) => <BookOpen color={color} size={size} />,
         }}
       />
 
@@ -87,12 +89,13 @@ export default function DurianCareMainTabs() {
       />
 
       <Tabs.Screen
-        name="community"
+        name="scanner"
         options={{
           href: null,
         }}
       />
 
+      <Tabs.Screen name="community" options={{ href: null }} />
       <Tabs.Screen
         name="sensors"
         options={{

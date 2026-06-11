@@ -1,5 +1,6 @@
 ﻿import {
   BellRing,
+  BookOpen,
   CalendarDays,
   CheckCircle2,
   FileChartColumn,
@@ -114,6 +115,18 @@ export function DurianOperationsScreen() {
 
         <Text style={styles.sectionTitle}>Công việc ưu tiên</Text>
 
+        <ActionCard
+          description="Đọc cẩm nang VietGAP, bệnh lá và dinh dưỡng dành cho vườn sầu riêng."
+          icon={BookOpen}
+          label="Không gian tri thức"
+          onPress={() => navigation.push("/(main)/knowledge")}
+        />
+        <ActionCard
+          description="Trao đổi kinh nghiệm và tình trạng vườn với mạng lưới nhà nông."
+          icon={Users}
+          label="Cộng đồng DurianCare"
+          onPress={() => navigation.push("/(main)/community")}
+        />
         {isOwner ? (
           <>
             <ActionCard

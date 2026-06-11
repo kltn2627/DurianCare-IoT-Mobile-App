@@ -34,7 +34,15 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "DurianCare cần quyền camera để chụp và mô phỏng quét bệnh trên lá sầu riêng."
+          "cameraPermission": "DurianCare cần quyền camera để chụp và chẩn đoán bệnh trên lá sầu riêng."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
         }
       ]
     ],
