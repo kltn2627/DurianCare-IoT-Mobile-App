@@ -1,439 +1,178 @@
-import {
-  BellRing,
-  CalendarDays,
-  Check,
-  Circle,
-  MessageCircle,
-  Plus,
-  Send,
-  Stethoscope,
-  X,
-} from "lucide-react-native";
-import { useMemo, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Bot, MessageCircle, Sparkles, UsersRound } from "lucide-react-native";
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useSession } from "@/src/session/SessionContext";
 import { durianTheme } from "@/src/theme/durianTheme";
-import { useWorkspace } from "@/src/workspace/WorkspaceContext";
-import type { ChatMessage, ProtocolDay } from "@/src/workspace/types";
+
+import { DurianAiAssistantChannel } from "./DurianAiAssistantChannel";
+import { DurianExpertChannel } from "./DurianExpertChannel";
+
+type ChatChannel = "ai" | "expert";
 
 export function DurianFieldChannelScreen() {
-  const { session } = useSession();
-  const { messages, publishProtocol, sendMessage, toggleProtocolDay } = useWorkspace();
-  const [draft, setDraft] = useState("");
-  const [showProtocolForm, setShowProtocolForm] = useState(false);
-  const [dayCount, setDayCount] = useState(2);
-  const [tasks, setTasks] = useState(["Phun thuốc trị nấm", "Bón phân vi lượng"]);
-  const isEngineer = session?.user.role === "ENGINEER";
-
-  const protocolDays = useMemo(
-    () =>
-      Array.from({ length: dayCount }, (_, index) => ({
-        completed: false,
-        day: index + 1,
-        task: tasks[index] ?? "",
-      })),
-    [dayCount, tasks],
-  );
-
-  function handleSend() {
-    const body = draft.trim();
-    if (!body || !session) return;
-    sendMessage(body, session.user.name, session.user.role);
-    setDraft("");
-  }
-
-  function changeDayCount(delta: number) {
-    const nextCount = Math.min(7, Math.max(1, dayCount + delta));
-    setDayCount(nextCount);
-    setTasks((current) =>
-      Array.from({ length: nextCount }, (_, index) => current[index] ?? ""),
-    );
-  }
-
-  function updateTask(index: number, task: string) {
-    setTasks((current) => current.map((item, taskIndex) => (taskIndex === index ? task : item)));
-  }
-
-  function handleSaveProtocol() {
-    if (protocolDays.some((item) => !item.task.trim())) return;
-    publishProtocol(protocolDays);
-    setShowProtocolForm(false);
-  }
+  const [channel, setChannel] = useState<ChatChannel>("ai");
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={76}
-        style={styles.flex}
-      >
-        <View style={styles.header}>
-          <View style={styles.avatar}>
-            <MessageCircle color={durianTheme.colors.durianYellow} size={24} />
-          </View>
-          <View style={styles.headerCopy}>
-            <Text style={styles.headerTitle}>Kênh phối hợp Khu A</Text>
-            <Text style={styles.headerSubtitle}>Chủ vườn • Kỹ sư thực địa • Bot lịch</Text>
-          </View>
-          {isEngineer ? (
-            <Pressable onPress={() => setShowProtocolForm((value) => !value)} style={styles.protocolToggle}>
-              {showProtocolForm ? (
-                <X color={durianTheme.colors.mossDark} size={20} />
-              ) : (
-                <Stethoscope color={durianTheme.colors.mossDark} size={20} />
-              )}
-            </Pressable>
-          ) : null}
+      <View style={styles.header}>
+        <View style={styles.headerIcon}>
+          <MessageCircle color={durianTheme.colors.durianYellow} size={24} />
         </View>
-
-        {isEngineer && showProtocolForm ? (
-          <ProtocolForm
-            dayCount={dayCount}
-            onChangeCount={changeDayCount}
-            onSave={handleSaveProtocol}
-            onTaskChange={updateTask}
-            tasks={tasks}
-          />
-        ) : null}
-
-        <ScrollView
-          contentContainerStyle={styles.messageList}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {messages.map((message) => (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              onToggleProtocolDay={toggleProtocolDay}
-              ownRole={session?.user.role}
-            />
-          ))}
-        </ScrollView>
-
-        <View style={styles.composer}>
-          <TextInput
-            multiline
-            onChangeText={setDraft}
-            placeholder="Nhập nội dung trao đổi..."
-            placeholderTextColor={durianTheme.colors.muted}
-            style={styles.composerInput}
-            value={draft}
-          />
-          <Pressable onPress={handleSend} style={styles.sendButton}>
-            <Send color={durianTheme.colors.mossDark} size={20} />
-          </Pressable>
+        <View style={styles.headerCopy}>
+          <Text style={styles.eyebrow}>TRẠM TƯ VẤN DURIANCARE</Text>
+          <Text style={styles.headerTitle}>AI và Kỹ sư đồng hành</Text>
         </View>
-      </KeyboardAvoidingView>
+        <View style={styles.onlineBadge}>
+          <View style={styles.onlineDot} />
+          <Text style={styles.onlineText}>24/7</Text>
+        </View>
+      </View>
+
+      <View style={styles.tabs}>
+        <ChannelTab
+          active={channel === "ai"}
+          icon={Bot}
+          label="Trợ lý AI"
+          onPress={() => setChannel("ai")}
+        />
+        <ChannelTab
+          active={channel === "expert"}
+          icon={UsersRound}
+          label="Kết nối Kỹ sư"
+          onPress={() => setChannel("expert")}
+        />
+      </View>
+
+      <View style={styles.channel}>
+        {channel === "ai" ? <DurianAiAssistantChannel /> : <DurianExpertChannel />}
+      </View>
     </SafeAreaView>
   );
 }
 
-function MessageBubble({
-  message,
-  onToggleProtocolDay,
-  ownRole,
+function ChannelTab({
+  active,
+  icon: Icon,
+  label,
+  onPress,
 }: {
-  message: ChatMessage;
-  onToggleProtocolDay: (messageId: string, day: number) => void;
-  ownRole?: "OWNER" | "ENGINEER";
+  active: boolean;
+  icon: typeof Bot;
+  label: string;
+  onPress: () => void;
 }) {
-  const isOwn = message.role === ownRole;
-  const isSystem = message.role === "BOT";
-
-  if (message.kind === "bot") {
-    return (
-      <View style={styles.botCard}>
-        <BellRing color={durianTheme.colors.danger} size={21} />
-        <View style={styles.systemCopy}>
-          <Text style={styles.botTitle}>BOT NHẮC LỊCH</Text>
-          <Text style={styles.botText}>{message.body}</Text>
-        </View>
-      </View>
-    );
-  }
-
-  if (message.kind === "protocol") {
-    return (
-      <View style={styles.protocolCard}>
-        <View style={styles.protocolCardHeader}>
-          <CalendarDays color={durianTheme.colors.durianYellow} size={22} />
-          <View style={styles.systemCopy}>
-            <Text style={styles.protocolCardLabel}>PHÁC ĐỒ SỐ</Text>
-            <Text style={styles.protocolCardTitle}>{message.body}</Text>
-          </View>
-        </View>
-        {message.protocol?.map((item) => (
-          <Pressable
-            key={item.day}
-            onPress={() => onToggleProtocolDay(message.id, item.day)}
-            style={[styles.protocolDay, item.completed && styles.protocolDayCompleted]}
-          >
-            {item.completed ? (
-              <Check color={durianTheme.colors.mossDark} size={17} strokeWidth={3} />
-            ) : (
-              <Circle color={durianTheme.colors.durianYellow} size={17} />
-            )}
-            <Text style={styles.protocolDayBadge}>Ngày {item.day}</Text>
-            <Text style={[styles.protocolDayTask, item.completed && styles.protocolDayTaskCompleted]}>
-              {item.task}
-            </Text>
-          </Pressable>
-        ))}
-        <Text style={styles.protocolHint}>Chạm từng ngày để xác nhận đã thực hiện xong.</Text>
-      </View>
-    );
-  }
-
   return (
-    <View style={[styles.messageRow, isOwn && styles.ownMessageRow]}>
-      <View
-        style={[
-          styles.bubble,
-          isOwn && styles.ownBubble,
-          message.kind === "scan-alert" && styles.scanBubble,
-        ]}
-      >
-        <Text
-          style={[
-            styles.author,
-            isOwn && styles.ownText,
-            message.kind === "scan-alert" && styles.scanAuthor,
-          ]}
-        >
-          {isSystem ? "DurianCare AI" : message.author}
-        </Text>
-        <Text style={[styles.messageText, isOwn && styles.ownText]}>{message.body}</Text>
-        <Text style={[styles.time, isOwn && styles.ownTime]}>{message.createdAt}</Text>
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
+      hitSlop={4}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.tab,
+        active && styles.activeTab,
+        pressed && styles.pressed,
+      ]}
+    >
+      <View style={[styles.tabIcon, active && styles.activeTabIcon]}>
+        <Icon
+          color={active ? durianTheme.colors.mossDark : durianTheme.colors.muted}
+          size={19}
+        />
       </View>
-    </View>
-  );
-}
-
-type ProtocolFormProps = {
-  dayCount: number;
-  onChangeCount: (delta: number) => void;
-  onSave: () => void;
-  onTaskChange: (index: number, task: string) => void;
-  tasks: string[];
-};
-
-function ProtocolForm({
-  dayCount,
-  onChangeCount,
-  onSave,
-  onTaskChange,
-  tasks,
-}: ProtocolFormProps) {
-  return (
-    <View style={styles.form}>
-      <Text style={styles.formTitle}>Thiết lập phác đồ điều trị</Text>
-      <View style={styles.countRow}>
-        <Text style={styles.formLabel}>Số ngày điều trị</Text>
-        <View style={styles.stepper}>
-          <Pressable onPress={() => onChangeCount(-1)} style={styles.stepperButton}>
-            <Text style={styles.stepperText}>−</Text>
-          </Pressable>
-          <Text style={styles.dayCount}>{dayCount}</Text>
-          <Pressable onPress={() => onChangeCount(1)} style={styles.stepperButton}>
-            <Plus color={durianTheme.colors.mossDark} size={17} />
-          </Pressable>
-        </View>
-      </View>
-      {tasks.map((task, index) => (
-        <View key={index} style={styles.taskRow}>
-          <Text style={styles.taskLabel}>Ngày {index + 1}</Text>
-          <TextInput
-            onChangeText={(value) => onTaskChange(index, value)}
-            placeholder={`Nhiệm vụ ngày ${index + 1}`}
-            placeholderTextColor={durianTheme.colors.muted}
-            style={styles.taskInput}
-            value={task}
-          />
-        </View>
-      ))}
-      <Pressable onPress={onSave} style={styles.saveButton}>
-        <Text style={styles.saveButtonText}>Lưu và gửi vào khung chat</Text>
-      </Pressable>
-    </View>
+      <Text style={[styles.tabText, active && styles.activeTabText]}>{label}</Text>
+      {active ? <Sparkles color={durianTheme.colors.moss} size={14} /> : null}
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  author: { color: durianTheme.colors.moss, fontSize: 11, fontWeight: "900" },
-  avatar: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.mossDark,
-    borderRadius: 22,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  botCard: {
-    alignItems: "flex-start",
-    backgroundColor: "#FBE9E5",
-    borderColor: "#F3C2B7",
-    borderRadius: durianTheme.radius.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 11,
-    padding: 15,
-  },
-  botText: { color: durianTheme.colors.ink, fontSize: 13, lineHeight: 19 },
-  botTitle: { color: durianTheme.colors.danger, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
-  bubble: {
+  activeTab: {
     backgroundColor: durianTheme.colors.surface,
-    borderRadius: 18,
-    gap: 5,
-    maxWidth: "84%",
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    borderColor: durianTheme.colors.durianYellow,
   },
-  composer: {
-    alignItems: "flex-end",
-    backgroundColor: durianTheme.colors.surface,
-    borderTopColor: durianTheme.colors.mossSoft,
-    borderTopWidth: 1,
-    flexDirection: "row",
-    gap: 10,
-    padding: 12,
+  activeTabIcon: { backgroundColor: durianTheme.colors.durianYellow },
+  activeTabText: { color: durianTheme.colors.mossDark },
+  channel: { flex: 1 },
+  eyebrow: {
+    color: durianTheme.colors.durianYellow,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1,
+    lineHeight: 13,
   },
-  composerInput: {
-    backgroundColor: durianTheme.colors.canvas,
-    borderRadius: 18,
-    color: durianTheme.colors.ink,
-    flex: 1,
-    fontSize: 14,
-    maxHeight: 96,
-    minHeight: 46,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  countRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  dayCount: { color: durianTheme.colors.ink, fontSize: 16, fontWeight: "900", minWidth: 24, textAlign: "center" },
-  flex: { flex: 1 },
-  form: {
-    backgroundColor: durianTheme.colors.surface,
-    borderBottomColor: durianTheme.colors.mossSoft,
-    borderBottomWidth: 1,
-    gap: 11,
-    padding: 16,
-  },
-  formLabel: { color: durianTheme.colors.muted, fontSize: 12, fontWeight: "800" },
-  formTitle: { color: durianTheme.colors.ink, fontSize: 16, fontWeight: "900" },
   header: {
     alignItems: "center",
     backgroundColor: durianTheme.colors.moss,
     flexDirection: "row",
     gap: 11,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
   },
   headerCopy: { flex: 1 },
-  headerSubtitle: { color: durianTheme.colors.mist, fontSize: 11, marginTop: 3 },
-  headerTitle: { color: durianTheme.colors.white, fontSize: 17, fontWeight: "900" },
-  messageList: { gap: 12, padding: 14, paddingBottom: 24 },
-  messageRow: { alignItems: "flex-start" },
-  messageText: { color: durianTheme.colors.ink, fontSize: 14, lineHeight: 20 },
-  ownBubble: { backgroundColor: durianTheme.colors.moss },
-  ownMessageRow: { alignItems: "flex-end" },
-  ownText: { color: durianTheme.colors.white },
-  ownTime: { color: durianTheme.colors.mist },
-  protocolCard: {
+  headerIcon: {
+    alignItems: "center",
     backgroundColor: durianTheme.colors.mossDark,
-    borderRadius: durianTheme.radius.md,
-    gap: 10,
-    padding: 16,
-  },
-  protocolCardHeader: { alignItems: "flex-start", flexDirection: "row", gap: 10 },
-  protocolCardLabel: { color: durianTheme.colors.durianYellow, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
-  protocolCardTitle: { color: durianTheme.colors.white, fontSize: 13, fontWeight: "800", lineHeight: 19 },
-  protocolDay: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.moss,
-    borderRadius: 12,
-    flexDirection: "row",
-    gap: 10,
-    padding: 10,
-  },
-  protocolDayCompleted: { backgroundColor: durianTheme.colors.durianYellow },
-  protocolDayBadge: {
-    backgroundColor: durianTheme.colors.durianYellow,
-    borderRadius: 8,
-    color: durianTheme.colors.mossDark,
-    fontSize: 10,
-    fontWeight: "900",
-    overflow: "hidden",
-    paddingHorizontal: 7,
-    paddingVertical: 5,
-  },
-  protocolDayTask: { color: durianTheme.colors.white, flex: 1, fontSize: 12, fontWeight: "700" },
-  protocolDayTaskCompleted: {
-    color: durianTheme.colors.mossDark,
-    textDecorationLine: "line-through",
-  },
-  protocolHint: { color: durianTheme.colors.mist, fontSize: 10, fontStyle: "italic" },
-  protocolToggle: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.durianYellow,
-    borderRadius: 18,
-    height: 38,
-    justifyContent: "center",
-    width: 38,
-  },
-  safeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 },
-  saveButton: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.durianYellow,
-    borderRadius: 12,
-    paddingVertical: 12,
-  },
-  saveButtonText: { color: durianTheme.colors.mossDark, fontSize: 13, fontWeight: "900" },
-  scanAuthor: { color: durianTheme.colors.danger },
-  scanBubble: {
-    backgroundColor: "#FBE9E5",
-    borderColor: durianTheme.colors.danger,
-    borderWidth: 2,
-  },
-  sendButton: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.durianYellow,
-    borderRadius: 23,
+    borderRadius: 17,
     height: 46,
     justifyContent: "center",
     width: 46,
   },
-  stepper: { alignItems: "center", flexDirection: "row", gap: 9 },
-  stepperButton: {
+  headerTitle: {
+    color: durianTheme.colors.white,
+    fontSize: 17,
+    fontWeight: "900",
+    lineHeight: 23,
+    marginTop: 1,
+  },
+  onlineBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: durianTheme.radius.pill,
+    flexDirection: "row",
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: 10,
+  },
+  onlineDot: { backgroundColor: "#71D19A", borderRadius: 5, height: 8, width: 8 },
+  onlineText: {
+    color: durianTheme.colors.white,
+    fontSize: 10,
+    fontWeight: "900",
+    lineHeight: 14,
+  },
+  pressed: { opacity: 0.84, transform: [{ scale: 0.98 }] },
+  safeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 },
+  tab: {
+    alignItems: "center",
+    borderColor: "transparent",
+    borderRadius: 17,
+    borderWidth: 2,
+    flex: 1,
+    flexDirection: "row",
+    gap: 7,
+    justifyContent: "center",
+    minHeight: 50,
+    paddingHorizontal: 9,
+  },
+  tabIcon: {
     alignItems: "center",
     backgroundColor: durianTheme.colors.mossSoft,
-    borderRadius: 15,
-    height: 30,
+    borderRadius: 12,
+    height: 34,
     justifyContent: "center",
-    width: 30,
+    width: 34,
   },
-  stepperText: { color: durianTheme.colors.mossDark, fontSize: 20, fontWeight: "900" },
-  systemCopy: { flex: 1, gap: 4 },
-  taskInput: {
-    backgroundColor: durianTheme.colors.canvas,
-    borderRadius: 10,
-    color: durianTheme.colors.ink,
-    flex: 1,
+  tabText: {
+    color: durianTheme.colors.muted,
     fontSize: 12,
-    paddingHorizontal: 11,
-    paddingVertical: 10,
+    fontWeight: "900",
+    lineHeight: 17,
   },
-  taskLabel: { color: durianTheme.colors.moss, fontSize: 11, fontWeight: "900", width: 48 },
-  taskRow: { alignItems: "center", flexDirection: "row", gap: 9 },
-  time: { color: durianTheme.colors.muted, fontSize: 9, textAlign: "right" },
+  tabs: {
+    backgroundColor: "#EEEBDD",
+    flexDirection: "row",
+    gap: 8,
+    padding: 10,
+  },
 });
