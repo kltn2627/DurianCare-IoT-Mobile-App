@@ -38,13 +38,21 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "cameraPermission": "DurianCare cần quyền camera để chụp ảnh hồ sơ và lá sầu riêng.",
+          "photosPermission": "DurianCare cần quyền thư viện ảnh để chọn ảnh hồ sơ và lá sầu riêng."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true

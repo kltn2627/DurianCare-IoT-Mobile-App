@@ -17,7 +17,9 @@ export function DurianNavigationGate({ children }: { children: ReactNode }) {
       if (!rootNavigationState?.key || isRestoring) return;
 
       const firstSegment = routeSegments[0];
-      const isLoginRoute = firstSegment === "login";
+      const isAuthRoute = ["login", "register", "verify-otp"].includes(
+        firstSegment ?? "",
+      );
       const isRootRoute = routeSegments.length === 0;
       const isProtectedRoute = firstSegment === "(main)";
       const isOwnerOnlyRoute =
@@ -25,9 +27,9 @@ export function DurianNavigationGate({ children }: { children: ReactNode }) {
 
       let target: string | null = null;
 
-      if (!session && !isLoginRoute) {
+      if (!session && !isAuthRoute) {
         target = "/login";
-      } else if (session && (isLoginRoute || isRootRoute)) {
+      } else if (session && (isAuthRoute || isRootRoute)) {
         target = session.user.role === "ENGINEER" ? "/(main)/chat" : "/(main)";
       } else if (!session && isProtectedRoute) {
         target = "/login";

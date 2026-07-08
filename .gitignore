@@ -36,8 +36,9 @@ yarn-error.*
 
 # Environment variables
 .env
-.env.*
-!.env.example
+.env.local
+.env.development
+.env.production
 
 # Editors and operating systems
 .DS_Store

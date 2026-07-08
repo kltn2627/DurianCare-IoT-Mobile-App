@@ -9,65 +9,265 @@ import {
   useState,
 } from "react";
 
-import type { SessionState, UserRole } from "./types";
+import {
+  loginRequest,
+  logoutRequest,
+  refreshAuthTokens,
+  setSessionInvalidHandler,
+} from "@/src/features/auth/authApi";
+import {
+  clearAuthTokens,
+  loadAuthTokens,
+} from "@/src/features/auth/authTokenStore";
+import type { AuthenticationResponse } from "@/src/features/auth/authTypes";
+import { profileClient } from "@/src/features/profile/profileApi";
+import type { ProfileRecord } from "@/src/features/profile/profileTypes";
 
-const SESSION_KEY = "@duriancare/mock-session";
+import type { SessionState, SessionUser, UserRole } from "./types";
+
+const USER_KEY = "@duriancare/auth-user";
+const AUTO_REFRESH_WINDOW_MS = 60_000;
 
 type SessionContextValue = {
+  applyProfileSnapshot: (profile: ProfileRecord) => Promise<void>;
+  getCurrentUser: () => SessionUser | null;
   isRestoring: boolean;
-  login: (email: string, role: UserRole) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshProfile: () => Promise<SessionUser | null>;
+  refreshSession: () => Promise<void>;
   session: SessionState | null;
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
-function createMockJwt(role: UserRole) {
-  const header = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0";
-  const ownerPayload = "eyJzdWIiOiJtb2NrLW93bmVyIiwicm9sZSI6Ik9XTkVSIn0";
-  const engineerPayload = "eyJzdWIiOiJtb2NrLWVuZ2luZWVyIiwicm9sZSI6IkVOR0lORUVSIn0";
-  return `${header}.${role === "OWNER" ? ownerPayload : engineerPayload}.mock-signature`;
+function toAppRole(role: string): UserRole {
+  if (role === "FARMER") return "OWNER";
+  if (role === "EXPERT") return "ENGINEER";
+  throw new Error(`Vai trò ${role} chưa được hỗ trợ trên ứng dụng Mobile.`);
+}
+
+function toSessionUser(response: AuthenticationResponse): SessionUser {
+  return {
+    avatarUrl: response.profile.avatarUrl,
+    backendRole: response.role as "EXPERT" | "FARMER",
+    accountStatus: null,
+    address: response.profile.farmAddress,
+    bio: null,
+    email: response.email,
+    createdAt: null,
+    dateOfBirth: null,
+    farmAddress: response.profile.farmAddress,
+    id: response.userId,
+    gender: null,
+    name: response.profile.fullName,
+    phoneNumber: response.profile.phoneNumber,
+    provinceCity: null,
+    role: toAppRole(response.role),
+    updatedAt: null,
+  };
+}
+
+function mergeProfileIntoUser(
+  baseUser: SessionUser,
+  profile: ProfileRecord,
+): SessionUser {
+  return {
+    ...baseUser,
+    accountStatus: profile.accountStatus,
+    address: profile.address,
+    avatarUrl: profile.avatarUrl,
+    bio: profile.bio,
+    createdAt: profile.createdAt,
+    dateOfBirth: profile.dateOfBirth,
+    email: profile.email,
+    farmAddress: profile.address ?? baseUser.farmAddress,
+    gender: profile.gender,
+    name: profile.fullName,
+    phoneNumber: profile.phoneNumber,
+    provinceCity: profile.provinceCity,
+    role: toAppRole(profile.role),
+    updatedAt: profile.updatedAt,
+  };
+}
+
+async function loadProfileForUser(baseUser: SessionUser) {
+  try {
+    const profile = await profileClient.me();
+    return mergeProfileIntoUser(baseUser, profile);
+  } catch {
+    return baseUser;
+  }
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<SessionState | null>(null);
   const [isRestoring, setIsRestoring] = useState(true);
 
-  useEffect(function restoreMockSession() {
+  const clearLocalSession = useCallback(async function clearLocalSession() {
+    await Promise.all([clearAuthTokens(), AsyncStorage.removeItem(USER_KEY)]);
+    setSession(null);
+  }, []);
+
+  useEffect(
+    function connectApiSessionInvalidation() {
+      setSessionInvalidHandler(clearLocalSession);
+      return () => setSessionInvalidHandler(null);
+    },
+    [clearLocalSession],
+  );
+
+  useEffect(function restorePersistentSession() {
+    let isActive = true;
+
     async function restore() {
       try {
-        const storedSession = await AsyncStorage.getItem(SESSION_KEY);
-        if (storedSession) setSession(JSON.parse(storedSession) as SessionState);
+        const [storedUser, storedTokens] = await Promise.all([
+          AsyncStorage.getItem(USER_KEY),
+          loadAuthTokens(),
+        ]);
+        if (!storedUser || !storedTokens) {
+          await clearLocalSession();
+          return;
+        }
+
+        const user = JSON.parse(storedUser) as SessionUser;
+        const tokens =
+          storedTokens.accessTokenExpiresAt - Date.now() <= AUTO_REFRESH_WINDOW_MS
+            ? await refreshAuthTokens()
+            : storedTokens;
+        const hydratedUser = await loadProfileForUser(user);
+
+        if (isActive) {
+          await AsyncStorage.setItem(USER_KEY, JSON.stringify(hydratedUser));
+          setSession({
+            accessTokenExpiresAt: tokens.accessTokenExpiresAt,
+            token: tokens.accessToken,
+            user: hydratedUser,
+          });
+        }
+      } catch {
+        await clearLocalSession();
       } finally {
-        setIsRestoring(false);
+        if (isActive) setIsRestoring(false);
       }
     }
 
     void restore();
-  }, []);
-
-  const login = useCallback(async function loginWithMockJwt(email: string, role: UserRole) {
-    const nextSession: SessionState = {
-      token: createMockJwt(role),
-      user: {
-        email,
-        name: role === "OWNER" ? "Nguyễn Minh - Chủ vườn" : "Kỹ sư Trần An",
-        role,
-      },
+    return () => {
+      isActive = false;
     };
+  }, [clearLocalSession]);
 
-    await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
-    setSession(nextSession);
+  const login = useCallback(async function loginWithBackend(
+    email: string,
+    password: string,
+  ) {
+    const response = await loginRequest(email.trim().toLowerCase(), password);
+    try {
+      const user = await loadProfileForUser(toSessionUser(response));
+      const accessTokenExpiresAt =
+        Date.now() + Math.max(0, response.accessTokenExpiresIn) * 1000;
+      await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
+      setSession({ accessTokenExpiresAt, token: response.accessToken, user });
+    } catch (error) {
+      await clearLocalSession();
+      throw error;
+    }
+  }, [clearLocalSession]);
+
+  const refreshSession = useCallback(async function refreshCurrentSession() {
+    const tokens = await refreshAuthTokens();
+    setSession((current) =>
+      current
+        ? {
+            ...current,
+            accessTokenExpiresAt: tokens.accessTokenExpiresAt,
+            token: tokens.accessToken,
+          }
+        : null,
+    );
   }, []);
 
-  const logout = useCallback(async function clearMockSession() {
-    await AsyncStorage.removeItem(SESSION_KEY);
-    setSession(null);
-  }, []);
+  const refreshProfile = useCallback(async function refreshCurrentProfile() {
+    if (!session) return null;
+    const profile = await profileClient.me();
+    const nextUser = mergeProfileIntoUser(session.user, profile);
+    await AsyncStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+    setSession((current) =>
+      current
+        ? {
+            ...current,
+            user: nextUser,
+          }
+        : current,
+    );
+    return nextUser;
+  }, [session]);
+
+  const applyProfileSnapshot = useCallback(
+    async function applyProfileSnapshot(profile: ProfileRecord) {
+      if (!session) return;
+      const nextUser = mergeProfileIntoUser(session.user, profile);
+      await AsyncStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+      setSession((current) =>
+        current
+          ? {
+              ...current,
+              user: nextUser,
+            }
+          : current,
+      );
+    },
+    [session],
+  );
+
+  useEffect(
+    function scheduleAccessTokenRefresh() {
+      if (!session) return;
+      const delay = Math.max(
+        0,
+        session.accessTokenExpiresAt - Date.now() - AUTO_REFRESH_WINDOW_MS,
+      );
+      const timer = setTimeout(() => {
+        void refreshSession().catch(() => clearLocalSession());
+      }, delay);
+      return () => clearTimeout(timer);
+    },
+    [clearLocalSession, refreshSession, session],
+  );
+
+  const logout = useCallback(async function logoutEverywhere() {
+    try {
+      await logoutRequest();
+    } finally {
+      await clearLocalSession();
+    }
+  }, [clearLocalSession]);
+
+  const getCurrentUser = useCallback(() => session?.user ?? null, [session]);
 
   const value = useMemo(
-    () => ({ isRestoring, login, logout, session }),
-    [isRestoring, login, logout, session],
+    () => ({
+      applyProfileSnapshot,
+      getCurrentUser,
+      isRestoring,
+      login,
+      logout,
+      refreshProfile,
+      refreshSession,
+      session,
+    }),
+    [
+      applyProfileSnapshot,
+      getCurrentUser,
+      isRestoring,
+      login,
+      logout,
+      refreshProfile,
+      refreshSession,
+      session,
+    ],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
