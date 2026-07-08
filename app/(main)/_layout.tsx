@@ -89,6 +89,20 @@ export default function DurianCareMainTabs() {
       />
 
       <Tabs.Screen
+        name="search"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
         name="scanner"
         options={{
           href: null,
@@ -112,6 +126,13 @@ export default function DurianCareMainTabs() {
 
       <Tabs.Screen
         name="profile"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="traceability"
         options={{
           href: null,
         }}

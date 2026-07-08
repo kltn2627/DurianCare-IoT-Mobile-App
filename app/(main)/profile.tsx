@@ -1,1 +1,1 @@
-export { DurianTraceabilityScreen as default } from "@/src/features/profile/DurianTraceabilityScreen";
+export { DurianProfileScreen as default } from "@/src/features/profile/DurianProfileScreen";
