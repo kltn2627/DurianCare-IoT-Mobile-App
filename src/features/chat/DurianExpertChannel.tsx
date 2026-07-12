@@ -143,7 +143,8 @@ export function DurianExpertChannel() {
 
   function saveProtocol() {
     if (protocolDays.some((item) => !item.task.trim())) return;
-    publishProtocol(protocolDays);
+    const message = publishProtocol(protocolDays);
+    realtime.send(message);
     setShowProtocolForm(false);
   }
 

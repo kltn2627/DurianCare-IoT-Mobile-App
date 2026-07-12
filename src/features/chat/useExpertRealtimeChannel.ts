@@ -28,6 +28,24 @@ function isMessageKind(value: unknown): value is ChatMessage["kind"] {
   );
 }
 
+function normalizeProtocolDays(value: unknown): ChatMessage["protocol"] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const days = value
+    .map((item) => {
+      if (!isRecord(item)) return null;
+      const day = Number(item.day);
+      const task = typeof item.task === "string" ? item.task : "";
+      if (!Number.isInteger(day) || !task.trim()) return null;
+      return {
+        completed: Boolean(item.completed),
+        day,
+        task,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+  return days.length > 0 ? days : undefined;
+}
+
 function normalizeInboundMessage(payload: unknown): ChatMessage | null {
   if (!isRecord(payload)) return null;
   const envelope = payload as SocketEnvelope;
@@ -39,7 +57,17 @@ function normalizeInboundMessage(payload: unknown): ChatMessage | null {
     : typeof candidate.content === "string"
       ? candidate.content
       : "";
-  if (!body && typeof candidate.imageUri !== "string") return null;
+  const regimenPayload = isRecord(candidate.payload) ? candidate.payload : null;
+  const protocol =
+    normalizeProtocolDays(candidate.protocol) ?? normalizeProtocolDays(regimenPayload?.steps);
+  const kind: ChatMessage["kind"] =
+    candidate.messageType === "TREATMENT_REGIMEN"
+      ? "protocol"
+      : isMessageKind(candidate.kind)
+        ? candidate.kind
+        : "text";
+
+  if (!body && typeof candidate.imageUri !== "string" && kind !== "protocol") return null;
 
   const rawRole = candidate.role ?? candidate.senderRole;
   const role: ChatMessage["role"] =
@@ -54,7 +82,11 @@ function normalizeInboundMessage(payload: unknown): ChatMessage | null {
           : role === "ENGINEER"
             ? "Kỹ sư DurianCare"
             : "Chủ vườn",
-    body,
+    body:
+      body ||
+      (typeof regimenPayload?.title === "string"
+        ? regimenPayload.title
+        : "Phac do dieu tri moi tu ky su."),
     createdAt:
       typeof candidate.createdAt === "string"
         ? candidate.createdAt
@@ -74,10 +106,8 @@ function normalizeInboundMessage(payload: unknown): ChatMessage | null {
         : typeof candidate.imageUrl === "string"
           ? candidate.imageUrl
           : undefined,
-    kind: isMessageKind(candidate.kind) ? candidate.kind : "text",
-    protocol: Array.isArray(candidate.protocol)
-      ? (candidate.protocol as ChatMessage["protocol"])
-      : undefined,
+    kind,
+    protocol,
     role,
     zoneLabel:
       typeof candidate.zoneLabel === "string"

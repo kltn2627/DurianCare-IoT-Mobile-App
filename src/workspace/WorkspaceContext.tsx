@@ -11,7 +11,7 @@ import type { ChatMessage, ProtocolDay } from "./types";
 
 type WorkspaceContextValue = {
   messages: ChatMessage[];
-  publishProtocol: (days: ProtocolDay[]) => void;
+  publishProtocol: (days: ProtocolDay[]) => ChatMessage;
   pushScanAlert: (disease: string, confidence: number) => void;
   receiveExpertMessage: (message: ChatMessage) => void;
   sendExpertImage: (
@@ -158,7 +158,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const publishProtocol = useCallback(
     function publishProtocol(days: ProtocolDay[]) {
-      appendMessage({
+      const message: ChatMessage = {
         author: "Kỹ sư Trần An",
         body: `Đã thiết lập phác đồ điều trị ${days.length} ngày cho bệnh Cháy lá tại Khu A.`,
         createdAt: "Vừa xong",
@@ -166,7 +166,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         kind: "protocol",
         protocol: days,
         role: "ENGINEER",
-      });
+      };
+      appendMessage(message);
+      return message;
     },
     [appendMessage],
   );
