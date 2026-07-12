@@ -42,8 +42,8 @@ export function DurianOperationsScreen() {
     await logout();
   }
 
-  function showMockAction(message: string) {
-    Alert.alert("Đã cập nhật mock data", message);
+  function showStatusAction(message: string) {
+    Alert.alert("Đã cập nhật trạng thái", message);
   }
 
   function inviteEngineer() {
@@ -177,9 +177,7 @@ export function DurianOperationsScreen() {
               description="Kiểm tra lại tiến độ Ngày 2 của phác đồ Đốm rong."
               icon={CheckCircle2}
               label="Theo dõi thực địa"
-              onPress={() =>
-                showMockAction("Đã đánh dấu lịch kiểm tra thực địa.")
-              }
+              onPress={() => showStatusAction("Đã đánh dấu lịch kiểm tra thực địa.")}
             />
 
             <ActionCard

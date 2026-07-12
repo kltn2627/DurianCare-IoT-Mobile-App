@@ -26,8 +26,9 @@ const seasons = [
 export function DurianTraceabilityScreen() {
   const { session } = useSession();
   const [selectedCrop, setSelectedCrop] = useState<(typeof seasons)[number] | null>(null);
+  const webBaseUrl = process.env.EXPO_PUBLIC_WEB_BASE_URL?.trim() || "";
   const qrValue = selectedCrop
-    ? `https://web.duriancare.local/traceability/${selectedCrop.cropId}`
+    ? `${webBaseUrl.replace(/\/$/, "")}/traceability/${selectedCrop.cropId}`
     : "";
 
   return (
@@ -36,7 +37,7 @@ export function DurianTraceabilityScreen() {
         eyebrow="HỒ SƠ & TRUY XUẤT"
         icon={Sprout}
         title="Định danh vụ mùa"
-        subtitle="Quản lý hồ sơ và tạo QR mock cho thương lái kiểm tra thông tin công khai."
+        subtitle="Quản lý hồ sơ và tạo QR cho thương lái kiểm tra thông tin công khai."
       />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.profileCard}>
@@ -105,7 +106,7 @@ export function DurianTraceabilityScreen() {
             </View>
             <Text numberOfLines={2} style={styles.qrValue}>{qrValue}</Text>
             <Text style={styles.qrNote}>
-              Liên kết mock mở trang Web Client công khai theo mẫu /traceability/[cropId].
+              Liên kết mở trang Web Client công khai theo mẫu /traceability/[cropId].
             </Text>
           </View>
         </View>

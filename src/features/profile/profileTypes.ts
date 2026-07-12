@@ -1,7 +1,14 @@
 import type { ApiErrorResponse } from "@/src/features/auth/authTypes";
 
 export type ProfileGender = "MALE" | "FEMALE" | "OTHER" | "";
-export type ProfileAccountStatus = "PENDING" | "ACTIVE" | "BLOCKED" | string;
+export type ProfileAccountStatus =
+  | "PENDING_VERIFICATION"
+  | "PENDING_APPROVAL"
+  | "PENDING"
+  | "ACTIVE"
+  | "BLOCKED"
+  | "REJECTED"
+  | string;
 
 export type ProfileRecord = {
   address: string | null;
@@ -18,6 +25,10 @@ export type ProfileRecord = {
   role: "ADMIN" | "EXPERT" | "FARMER" | "GUEST" | string;
   updatedAt: string;
   userId: string;
+  workplace?: string | null;
+  specialization?: string | null;
+  yearsExperience?: number | null;
+  certificateUrls?: string[] | null;
 };
 
 export type ProfileUpdateRequest = {

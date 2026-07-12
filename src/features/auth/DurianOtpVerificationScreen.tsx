@@ -52,7 +52,7 @@ export function DurianOtpVerificationScreen() {
     setMessage("");
     setIsSubmitting(true);
     try {
-      const response = await verifyOtpRequest(email, otpCode);
+      const response = await verifyOtpRequest({ email, otpCode });
       setMessage(response.message);
       setIsVerified(true);
     } catch (requestError) {

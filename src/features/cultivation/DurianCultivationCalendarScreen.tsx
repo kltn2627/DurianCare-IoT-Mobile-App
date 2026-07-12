@@ -401,8 +401,8 @@ export function DurianCultivationCalendarScreen() {
 
         <Text style={styles.syncNote}>
           {session?.user.role === "OWNER" ? "Chủ vườn" : "Kỹ sư"} đang dùng dữ
-          liệu mock cục bộ. Khi service lịch canh tác chạy, màn này có thể đổi
-          sang API /api/cultivation-schedules.
+          liệu cục bộ trên thiết bị. Khi service lịch canh tác sẵn sàng, màn này
+          có thể đồng bộ sang API /api/cultivation-schedules.
         </Text>
       </ScrollView>
     </SafeAreaView>
