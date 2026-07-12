@@ -19,7 +19,7 @@ import {
   clearAuthTokens,
   loadAuthTokens,
 } from "@/src/features/auth/authTokenStore";
-import type { AuthenticationResponse } from "@/src/features/auth/authTypes";
+import type { AuthSession, AuthRole } from "@/src/features/auth/authTypes";
 import { profileClient } from "@/src/features/profile/profileApi";
 import type { ProfileRecord } from "@/src/features/profile/profileTypes";
 
@@ -41,30 +41,35 @@ type SessionContextValue = {
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
-function toAppRole(role: string): UserRole {
+function toAppRole(role: AuthRole): UserRole {
   if (role === "FARMER") return "OWNER";
-  if (role === "EXPERT") return "ENGINEER";
+  if (role === "ENGINEER" || role === "EXPERT" || role === "ADMIN") return "ENGINEER";
   throw new Error(`Vai trò ${role} chưa được hỗ trợ trên ứng dụng Mobile.`);
 }
 
-function toSessionUser(response: AuthenticationResponse): SessionUser {
+function toSessionUser(session: AuthSession): SessionUser {
   return {
-    avatarUrl: response.profile.avatarUrl,
-    backendRole: response.role as "EXPERT" | "FARMER",
-    accountStatus: null,
-    address: response.profile.farmAddress,
-    bio: null,
-    email: response.email,
-    createdAt: null,
-    dateOfBirth: null,
-    farmAddress: response.profile.farmAddress,
-    id: response.userId,
-    gender: null,
-    name: response.profile.fullName,
-    phoneNumber: response.profile.phoneNumber,
-    provinceCity: null,
-    role: toAppRole(response.role),
-    updatedAt: null,
+    accountStatus: session.accountStatus ?? session.profile.accountStatus ?? null,
+    address: session.profile.address ?? session.profile.farmAddress ?? null,
+    avatarUrl: session.profile.avatarUrl,
+    backendRole: session.role,
+    bio: session.profile.bio ?? null,
+    certificateUrls: session.profile.certificateUrls ?? null,
+    createdAt: session.profile.createdAt ?? null,
+    dateOfBirth: session.profile.dateOfBirth ?? null,
+    email: session.email,
+    farmAddress: session.profile.farmAddress,
+    fullName: session.profile.fullName,
+    gender: session.profile.gender ?? null,
+    id: session.userId,
+    name: session.profile.fullName,
+    phoneNumber: session.profile.phoneNumber,
+    provinceCity: session.profile.provinceCity ?? null,
+    role: toAppRole(session.role),
+    specialization: session.profile.specialization ?? null,
+    updatedAt: session.profile.updatedAt ?? null,
+    workplace: session.profile.workplace ?? null,
+    yearsExperience: session.profile.yearsExperience ?? null,
   };
 }
 
@@ -74,20 +79,25 @@ function mergeProfileIntoUser(
 ): SessionUser {
   return {
     ...baseUser,
-    accountStatus: profile.accountStatus,
-    address: profile.address,
-    avatarUrl: profile.avatarUrl,
-    bio: profile.bio,
-    createdAt: profile.createdAt,
-    dateOfBirth: profile.dateOfBirth,
-    email: profile.email,
+    accountStatus: profile.accountStatus ?? baseUser.accountStatus,
+    address: profile.address ?? baseUser.address,
+    avatarUrl: profile.avatarUrl ?? baseUser.avatarUrl,
+    bio: profile.bio ?? baseUser.bio,
+    createdAt: profile.createdAt ?? baseUser.createdAt,
+    dateOfBirth: profile.dateOfBirth ?? baseUser.dateOfBirth,
+    email: profile.email ?? baseUser.email,
     farmAddress: profile.address ?? baseUser.farmAddress,
-    gender: profile.gender,
-    name: profile.fullName,
-    phoneNumber: profile.phoneNumber,
-    provinceCity: profile.provinceCity,
-    role: toAppRole(profile.role),
-    updatedAt: profile.updatedAt,
+    fullName: profile.fullName ?? baseUser.fullName,
+    gender: profile.gender ?? baseUser.gender,
+    name: profile.fullName ?? baseUser.name,
+    phoneNumber: profile.phoneNumber ?? baseUser.phoneNumber,
+    provinceCity: profile.provinceCity ?? baseUser.provinceCity,
+    role: toAppRole(profile.role as AuthRole),
+    specialization: profile.specialization ?? baseUser.specialization,
+    updatedAt: profile.updatedAt ?? baseUser.updatedAt,
+    workplace: profile.workplace ?? baseUser.workplace,
+    yearsExperience: profile.yearsExperience ?? baseUser.yearsExperience,
+    certificateUrls: profile.certificateUrls ?? baseUser.certificateUrls,
   };
 }
 
@@ -159,22 +169,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, [clearLocalSession]);
 
-  const login = useCallback(async function loginWithBackend(
-    email: string,
-    password: string,
-  ) {
-    const response = await loginRequest(email.trim().toLowerCase(), password);
-    try {
-      const user = await loadProfileForUser(toSessionUser(response));
-      const accessTokenExpiresAt =
-        Date.now() + Math.max(0, response.accessTokenExpiresIn) * 1000;
-      await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
-      setSession({ accessTokenExpiresAt, token: response.accessToken, user });
-    } catch (error) {
-      await clearLocalSession();
-      throw error;
-    }
-  }, [clearLocalSession]);
+  const login = useCallback(
+    async function loginWithBackend(email: string, password: string) {
+      const response = await loginRequest({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+      try {
+        const user = await loadProfileForUser(toSessionUser(response));
+        const accessTokenExpiresAt =
+          Date.now() + Math.max(0, response.accessTokenExpiresIn) * 1000;
+        await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
+        setSession({ accessTokenExpiresAt, token: response.accessToken, user });
+      } catch (error) {
+        await clearLocalSession();
+        throw error;
+      }
+    },
+    [clearLocalSession],
+  );
 
   const refreshSession = useCallback(async function refreshCurrentSession() {
     const tokens = await refreshAuthTokens();
@@ -237,13 +250,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [clearLocalSession, refreshSession, session],
   );
 
-  const logout = useCallback(async function logoutEverywhere() {
-    try {
-      await logoutRequest();
-    } finally {
-      await clearLocalSession();
-    }
-  }, [clearLocalSession]);
+  const logout = useCallback(
+    async function logoutEverywhere() {
+      try {
+        await logoutRequest();
+      } finally {
+        await clearLocalSession();
+      }
+    },
+    [clearLocalSession],
+  );
 
   const getCurrentUser = useCallback(() => session?.user ?? null, [session]);
 

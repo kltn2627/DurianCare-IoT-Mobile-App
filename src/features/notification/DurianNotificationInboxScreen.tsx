@@ -23,6 +23,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
 import { friendlyApiMessage } from "@/src/lib/feedback";
+import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
 import { useSession } from "@/src/session/SessionContext";
 import { durianTheme } from "@/src/theme/durianTheme";
 
@@ -91,17 +92,27 @@ function NotificationSkeleton() {
 
 function NotificationCard({
   item,
+  onOpenDetail,
   onMarkRead,
   onDelete,
   busy,
 }: {
   item: NotificationItem;
+  onOpenDetail: (id: string) => void;
   onMarkRead: (id: string) => void;
   onDelete: (id: string) => void;
   busy: boolean;
 }) {
   return (
-    <View style={[styles.card, item.isRead ? styles.cardRead : styles.cardUnread]}>
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => onOpenDetail(item.id)}
+      style={({ pressed }) => [
+        styles.card,
+        item.isRead ? styles.cardRead : styles.cardUnread,
+        pressed && styles.pressed,
+      ]}
+    >
       <View style={styles.cardTopRow}>
         <View style={[styles.cardIcon, item.isRead ? styles.cardIconRead : styles.cardIconUnread]}>
           <Bell color={item.isRead ? durianTheme.colors.muted : durianTheme.colors.durianYellow} size={18} />
@@ -145,7 +156,7 @@ function NotificationCard({
           <Text style={styles.deleteButtonText}>Xoá</Text>
         </Pressable>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -180,6 +191,7 @@ function Chip({ icon: Icon, label }: { icon: typeof Filter; label: string }) {
 
 export function DurianNotificationInboxScreen() {
   const { session } = useSession();
+  const navigation = useDurianSafeNavigation();
   const userId = session?.user.id ?? "";
   const [mode, setMode] = useState<ViewMode>("UNREAD");
   const [page, setPage] = useState(0);
@@ -350,6 +362,16 @@ export function DurianNotificationInboxScreen() {
       ]);
     },
     [refresh, userId],
+  );
+
+  const openNotificationDetail = useCallback(
+    (id: string) => {
+      navigation.push({
+        pathname: "/notification-detail",
+        params: { id },
+      });
+    },
+    [navigation],
   );
 
   return (
@@ -537,11 +559,12 @@ export function DurianNotificationInboxScreen() {
             <NotificationCard
               busy={busyId === item.id}
               item={item}
+              onOpenDetail={openNotificationDetail}
               onDelete={removeNotification}
               onMarkRead={markRead}
             />
           ),
-          [busyId, markRead, removeNotification],
+          [busyId, markRead, openNotificationDetail, removeNotification],
         )}
         showsVerticalScrollIndicator={false}
       />

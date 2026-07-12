@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Focus,
   ImagePlus,
+  History,
   MessageCircleWarning,
   RefreshCw,
   RotateCcw,
@@ -12,7 +13,7 @@ import {
   ShieldCheck,
   WifiOff,
 } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -28,6 +29,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
 import { durianTheme } from "@/src/theme/durianTheme";
 import { useWorkspace } from "@/src/workspace/WorkspaceContext";
+
+import { saveDiagnosisHistoryEntry } from "@/src/features/diagnosis/diagnosisHistoryStore";
 
 import { useDurianDiseaseCamera } from "./useDurianDiseaseCamera";
 
@@ -49,6 +52,8 @@ export function DurianScannerScreen() {
     retryAnalysis,
   } = useDurianDiseaseCamera();
   const [wasPushed, setWasPushed] = useState(false);
+  const [historyEntryId, setHistoryEntryId] = useState<string | null>(null);
+  const lastSavedSignatureRef = useRef<string | null>(null);
 
   useEffect(
     function animateStateChange() {
@@ -57,8 +62,29 @@ export function DurianScannerScreen() {
     [phase],
   );
 
+  useEffect(
+    function persistLatestDiagnosis() {
+      if (!photo || !prediction) return;
+      const signature = `${photo.uri}|${prediction.disease.code}|${prediction.confidence}`;
+      if (lastSavedSignatureRef.current === signature) return;
+
+      lastSavedSignatureRef.current = signature;
+      void saveDiagnosisHistoryEntry({
+        boundingBox: prediction.boundingBox,
+        confidence: prediction.confidence,
+        disease: prediction.disease,
+        imageUri: photo.uri,
+      }).then((entry) => {
+        setHistoryEntryId(entry.id);
+      });
+    },
+    [photo, prediction],
+  );
+
   function handleReset() {
     setWasPushed(false);
+    setHistoryEntryId(null);
+    lastSavedSignatureRef.current = null;
     reset();
   }
 
@@ -67,6 +93,21 @@ export function DurianScannerScreen() {
     pushScanAlert(prediction.disease.name, prediction.confidence);
     setWasPushed(true);
     navigation.push("/(main)/chat");
+  }
+
+  function openResultScreen() {
+    if (!prediction || !photo) return;
+    const params = new URLSearchParams({
+      confidence: String(prediction.confidence),
+      createdAt: new Date().toISOString(),
+      diseaseCode: prediction.disease.code,
+      diseaseName: prediction.disease.name,
+      imageUri: photo.uri,
+    });
+    if (historyEntryId) {
+      params.set("entryId", historyEntryId);
+    }
+    navigation.push(`/diagnosis-result?${params.toString()}`);
   }
 
   const boundingBoxStyle = prediction
@@ -232,7 +273,26 @@ export function DurianScannerScreen() {
                 {wasPushed ? "Đã gửi cảnh báo" : "Đẩy cảnh báo vào khung chat"}
               </Text>
             </Pressable>
+
+            <Pressable
+              hitSlop={6}
+              onPress={openResultScreen}
+              style={({ pressed }) => [styles.resultButton, pressed && styles.pressedButton]}
+            >
+              <Text style={styles.resultButtonText}>Mở màn hình kết quả</Text>
+            </Pressable>
           </View>
+        ) : null}
+
+        {prediction ? (
+          <Pressable
+            hitSlop={6}
+            onPress={() => navigation.push("/diagnosis-history")}
+            style={({ pressed }) => [styles.historyButton, pressed && styles.pressedButton]}
+          >
+            <History color={durianTheme.colors.moss} size={18} />
+            <Text style={styles.historyButtonText}>Xem lịch sử chẩn đoán</Text>
+          </Pressable>
         ) : null}
       </ScrollView>
     </SafeAreaView>
@@ -377,6 +437,22 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   code: {
+    color: durianTheme.colors.moss,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
+  historyButton: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.mossSoft,
+    borderRadius: 18,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    minHeight: 46,
+    paddingHorizontal: 16,
+  },
+  historyButtonText: {
     color: durianTheme.colors.moss,
     fontSize: 13,
     fontWeight: "900",
@@ -614,6 +690,22 @@ const styles = StyleSheet.create({
     lineHeight: 26,
   },
   resultTitleGroup: { flex: 1 },
+  resultButton: {
+    alignItems: "center",
+    backgroundColor: "#F7F9F4",
+    borderColor: "#D9E3DB",
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 46,
+    paddingHorizontal: 16,
+  },
+  resultButtonText: {
+    color: durianTheme.colors.moss,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
   safeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 },
   secondaryButton: {
     alignItems: "center",

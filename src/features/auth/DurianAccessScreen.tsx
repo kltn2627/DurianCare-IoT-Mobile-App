@@ -14,14 +14,14 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useSession } from "@/src/session/SessionContext";
-import type { UserRole } from "@/src/session/types";
 import { durianTheme } from "@/src/theme/durianTheme";
+import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
 
 export function DurianAccessScreen() {
+  const navigation = useDurianSafeNavigation();
   const { isRestoring, login } = useSession();
-  const [email, setEmail] = useState("owner@duriancare.vn");
-  const [password, setPassword] = useState("12345678");
-  const [role, setRole] = useState<UserRole>("OWNER");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -34,11 +34,6 @@ export function DurianAccessScreen() {
     );
   }
 
-  function handleRoleChange(nextRole: UserRole) {
-    setRole(nextRole);
-    setEmail(nextRole === "OWNER" ? "owner@duriancare.vn" : "engineer@duriancare.vn");
-  }
-
   async function handleLogin() {
     if (!email.trim() || password.length < 6) {
       setError("Vui lòng nhập email và mật khẩu tối thiểu 6 ký tự.");
@@ -47,9 +42,13 @@ export function DurianAccessScreen() {
 
     setError("");
     setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 650));
-    await login(email.trim(), role);
-    setIsSubmitting(false);
+    try {
+      await login(email.trim(), password);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Đăng nhập thất bại.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -70,31 +69,16 @@ export function DurianAccessScreen() {
             <Text style={styles.brand}>DurianCare</Text>
             <Text style={styles.tagline}>SmartFarm Disease Operations</Text>
             <Text style={styles.description}>
-              Không gian làm việc dành cho chủ vườn và kỹ sư nông nghiệp thực địa.
+              Đăng nhập để tiếp tục vào không gian làm việc cho nhà vườn, kỹ sư và quản trị viên.
             </Text>
           </View>
 
           <View style={styles.formCard}>
             <View>
               <Text style={styles.formTitle}>Đăng nhập hệ thống</Text>
-              <Text style={styles.formSubtitle}>Chọn vai trò để xem đúng luồng nghiệp vụ mock.</Text>
-            </View>
-
-            <View style={styles.roleSwitch}>
-              {(["OWNER", "ENGINEER"] as UserRole[]).map((item) => {
-                const isActive = role === item;
-                return (
-                  <Pressable
-                    key={item}
-                    onPress={() => handleRoleChange(item)}
-                    style={[styles.roleButton, isActive && styles.roleButtonActive]}
-                  >
-                    <Text style={[styles.roleText, isActive && styles.roleTextActive]}>
-                      {item === "OWNER" ? "Chủ vườn" : "Kỹ sư"}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+              <Text style={styles.formSubtitle}>
+                Sử dụng email và mật khẩu đã đăng ký để truy cập đúng luồng nghiệp vụ.
+              </Text>
             </View>
 
             <View style={styles.fieldGroup}>
@@ -103,6 +87,7 @@ export function DurianAccessScreen() {
                 <Mail color={durianTheme.colors.muted} size={20} />
                 <TextInput
                   autoCapitalize="none"
+                  autoComplete="email"
                   keyboardType="email-address"
                   onChangeText={setEmail}
                   placeholder="email@duriancare.vn"
@@ -118,6 +103,7 @@ export function DurianAccessScreen() {
               <View style={styles.inputShell}>
                 <LockKeyhole color={durianTheme.colors.muted} size={20} />
                 <TextInput
+                  autoComplete="current-password"
                   onChangeText={setPassword}
                   placeholder="Nhập mật khẩu"
                   placeholderTextColor={durianTheme.colors.muted}
@@ -139,7 +125,7 @@ export function DurianAccessScreen() {
 
             <Pressable
               disabled={isSubmitting}
-              onPress={handleLogin}
+              onPress={() => void handleLogin()}
               style={({ pressed }) => [
                 styles.loginButton,
                 pressed && styles.pressed,
@@ -156,8 +142,15 @@ export function DurianAccessScreen() {
               )}
             </Pressable>
 
-            <Text style={styles.mockNote}>
-              Demo offline: hệ thống chỉ lưu JWT giả trên thiết bị, không gửi dữ liệu ra ngoài.
+            <Pressable
+              onPress={() => navigation.replace("/register")}
+              style={({ pressed }) => [styles.registerLink, pressed && styles.pressed]}
+            >
+              <Text style={styles.registerLinkText}>Chưa có tài khoản? Đăng ký</Text>
+            </Pressable>
+
+            <Text style={styles.sessionNote}>
+              Phiên đăng nhập sẽ được giữ lại cục bộ trên thiết bị và tự động làm mới khi cần.
             </Text>
           </View>
         </ScrollView>
@@ -167,7 +160,12 @@ export function DurianAccessScreen() {
 }
 
 const styles = StyleSheet.create({
-  brand: { color: durianTheme.colors.white, fontSize: 34, fontWeight: "900", letterSpacing: -1 },
+  brand: {
+    color: durianTheme.colors.white,
+    fontSize: 34,
+    fontWeight: "900",
+    letterSpacing: -1,
+  },
   brandBlock: { alignItems: "center", gap: 7, paddingHorizontal: 22, paddingVertical: 34 },
   content: { flexGrow: 1, justifyContent: "center", padding: 20 },
   description: {
@@ -226,18 +224,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 64,
   },
-  mockNote: { color: durianTheme.colors.muted, fontSize: 11, lineHeight: 17, textAlign: "center" },
+  sessionNote: { color: durianTheme.colors.muted, fontSize: 11, lineHeight: 17, textAlign: "center" },
   pressed: { transform: [{ scale: 0.985 }] },
-  roleButton: { alignItems: "center", borderRadius: 10, flex: 1, paddingVertical: 11 },
-  roleButtonActive: { backgroundColor: durianTheme.colors.moss },
-  roleSwitch: {
-    backgroundColor: durianTheme.colors.mossSoft,
-    borderRadius: durianTheme.radius.sm,
-    flexDirection: "row",
-    padding: 4,
-  },
-  roleText: { color: durianTheme.colors.moss, fontSize: 13, fontWeight: "800" },
-  roleTextActive: { color: durianTheme.colors.white },
+  registerLink: { alignItems: "center", minHeight: 44, justifyContent: "center" },
+  registerLinkText: { color: durianTheme.colors.moss, fontSize: 13, fontWeight: "800" },
   safeArea: { backgroundColor: durianTheme.colors.moss, flex: 1 },
-  tagline: { color: durianTheme.colors.durianYellow, fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },
+  tagline: {
+    color: durianTheme.colors.durianYellow,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+  },
 });

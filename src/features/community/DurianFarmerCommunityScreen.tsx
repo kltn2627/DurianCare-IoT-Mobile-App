@@ -113,7 +113,7 @@ export function DurianFarmerCommunity() {
         eyebrow="MẠNG LƯỚI NHÀ NÔNG"
         icon={Users}
         title="Cộng đồng DurianCare"
-        subtitle="Chia sẻ ảnh bệnh lá và trao đổi kinh nghiệm canh tác bằng dữ liệu mock."
+        subtitle="Chia sẻ ảnh bệnh lá và trao đổi kinh nghiệm canh tác cùng nhà nông."
       />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Pressable onPress={() => setShowComposer((value) => !value)} style={styles.createButton}>
@@ -145,14 +145,14 @@ export function DurianFarmerCommunity() {
               style={styles.postContentInput}
               value={postContent}
             />
-            <View style={styles.mockImageNote}>
-              <Text style={styles.mockImageNoteText}>
-                Ảnh bệnh lá mẫu sẽ được đính kèm cục bộ, không tải lên máy chủ.
+            <View style={styles.attachmentNote}>
+              <Text style={styles.attachmentNoteText}>
+                Ảnh bệnh lá sẽ được đính kèm từ bộ nhớ thiết bị trước khi đăng bài.
               </Text>
             </View>
             <Pressable onPress={publishPost} style={styles.publishButton}>
               <Send color={durianTheme.colors.mossDark} size={18} />
-              <Text style={styles.publishButtonText}>Đăng bài bằng mock state</Text>
+              <Text style={styles.publishButtonText}>Đăng bài</Text>
             </Pressable>
           </View>
         ) : null}
@@ -316,12 +316,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 11,
   },
-  mockImageNote: {
+  attachmentNote: {
     backgroundColor: durianTheme.colors.mossSoft,
     borderRadius: 11,
     padding: 10,
   },
-  mockImageNoteText: { color: durianTheme.colors.moss, fontSize: 11, lineHeight: 16 },
+  attachmentNoteText: { color: durianTheme.colors.moss, fontSize: 11, lineHeight: 16 },
   publishButton: {
     alignItems: "center",
     backgroundColor: durianTheme.colors.durianYellow,

@@ -13,16 +13,29 @@ import {
 } from "./authTokenStore";
 import type {
   AccessTokenResponse,
-  ApiErrorResponse,
+  ApiErrorBody,
+  ApproveExpertResponse,
   AuthenticationResponse,
+  EngineerApplicationDetail,
+  EngineerApplicationSummary,
+  EngineerRegistrationRequest,
+  LoginRequest,
   MessageResponse,
   RegisterRequest,
+  ReviewEngineerApplicationRequest,
+  VerifyOtpRequest,
+  AuthSession,
 } from "./authTypes";
 
 const REFRESH_WINDOW_MS = 60_000;
 
 type RetriableRequest = InternalAxiosRequestConfig & { _authRetry?: boolean };
 type SessionInvalidHandler = () => void | Promise<void>;
+type QualificationFile = {
+  name: string;
+  type?: string | null;
+  uri: string;
+};
 
 export class AuthApiError extends Error {
   constructor(
@@ -36,8 +49,11 @@ export class AuthApiError extends Error {
 }
 
 function getAuthBaseUrl() {
-  const configuredUrl =
-    process.env.EXPO_PUBLIC_AUTH_API_BASE_URL?.trim() || "http://localhost:8080";
+  const configuredUrl = process.env.EXPO_PUBLIC_AUTH_API_BASE_URL?.trim();
+  if (!configuredUrl) {
+    throw new Error("Thiếu EXPO_PUBLIC_AUTH_API_BASE_URL để kết nối dịch vụ xác thực.");
+  }
+
   return configuredUrl.replace(/\/$/, "");
 }
 
@@ -134,11 +150,11 @@ authenticatedApiClient.interceptors.response.use(
   retryUnauthorized,
 );
 
-export async function loginRequest(email: string, password: string) {
+export async function loginRequest(request: LoginRequest) {
   try {
     const response = await publicAuthClient.post<AuthenticationResponse>(
       `${getAuthBaseUrl()}/api/auth/login`,
-      { email, password },
+      request,
     );
     await saveAuthTokens({
       accessToken: response.data.accessToken,
@@ -163,11 +179,68 @@ export async function registerRequest(request: RegisterRequest) {
   }
 }
 
-export async function verifyOtpRequest(email: string, otpCode: string) {
+export async function registerEngineerRequest(
+  request: EngineerRegistrationRequest,
+  qualificationFiles: QualificationFile[],
+) {
+  try {
+    const formData = new FormData();
+    formData.append("email", request.email);
+    formData.append("password", request.password);
+    formData.append("fullName", request.fullName);
+    formData.append("role", request.role);
+    if (request.phoneNumber) formData.append("phoneNumber", request.phoneNumber);
+    formData.append("workplace", request.workplace);
+    formData.append("specialization", request.specialization);
+    formData.append("yearsExperience", String(request.yearsExperience));
+    formData.append("biography", request.biography);
+
+    qualificationFiles.forEach((file) => {
+      formData.append(
+        "qualificationFiles",
+        {
+          name: file.name,
+          type: file.type ?? "application/octet-stream",
+          uri: file.uri,
+        } as never,
+      );
+    });
+
+    const response = await publicAuthClient.post<MessageResponse>(
+      `${getAuthBaseUrl()}/api/auth/register/engineer`,
+      formData,
+    );
+    return response.data;
+  } catch (error) {
+    throw normalizeAuthError(error);
+  }
+}
+
+export async function approveExpertRequest(userId: string) {
+  try {
+    const response = await authenticatedApiClient.post<ApproveExpertResponse>(
+      `/api/auth/admin/users/${encodeURIComponent(userId)}/approve-expert`,
+    );
+    return response.data;
+  } catch (error) {
+    throw normalizeAuthError(error);
+  }
+}
+
+export async function sessionRequest() {
+  try {
+    const response = await authenticatedApiClient.get<AuthSession>("/api/auth/session");
+    return response.data;
+  } catch (error) {
+    throw normalizeAuthError(error);
+  }
+}
+
+export async function verifyOtpRequest(request: VerifyOtpRequest) {
   try {
     const response = await publicAuthClient.post<MessageResponse>(
       `${getAuthBaseUrl()}/api/auth/otp/verify`,
-      { email, otpCode },
+      request,
     );
     return response.data;
   } catch (error) {
@@ -196,22 +269,75 @@ export async function logoutRequest() {
   }
 }
 
+export async function listEngineerApplications(status?: string) {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  const query = params.toString();
+  try {
+    const response = await authenticatedApiClient.get<EngineerApplicationSummary[]>(
+      `/api/auth/admin/engineer-applications${query ? `?${query}` : ""}`,
+    );
+    return response.data;
+  } catch (error) {
+    throw normalizeAuthError(error);
+  }
+}
+
+export async function getEngineerApplication(applicationId: string) {
+  try {
+    const response = await authenticatedApiClient.get<EngineerApplicationDetail>(
+      `/api/auth/admin/engineer-applications/${encodeURIComponent(applicationId)}`,
+    );
+    return response.data;
+  } catch (error) {
+    throw normalizeAuthError(error);
+  }
+}
+
+export async function approveEngineerApplication(applicationId: string) {
+  try {
+    const response = await authenticatedApiClient.post<MessageResponse>(
+      `/api/auth/admin/engineer-applications/${encodeURIComponent(applicationId)}/approve`,
+    );
+    return response.data;
+  } catch (error) {
+    throw normalizeAuthError(error);
+  }
+}
+
+export async function rejectEngineerApplication(
+  applicationId: string,
+  body: ReviewEngineerApplicationRequest,
+) {
+  try {
+    const response = await authenticatedApiClient.post<MessageResponse>(
+      `/api/auth/admin/engineer-applications/${encodeURIComponent(applicationId)}/reject`,
+      body,
+    );
+    return response.data;
+  } catch (error) {
+    throw normalizeAuthError(error);
+  }
+}
+
 export async function authorizedRequest<T>(config: AxiosRequestConfig) {
   return authenticatedApiClient.request<T>(config);
 }
 
 export function normalizeAuthError(error: unknown) {
   if (error instanceof AuthApiError) return error;
-  if (axios.isAxiosError<ApiErrorResponse>(error)) {
+  if (axios.isAxiosError<ApiErrorBody>(error)) {
     const message =
       error.response?.data?.message ??
+      error.response?.data?.error ??
       (error.code === "ECONNABORTED"
         ? "Máy chủ phản hồi quá chậm. Vui lòng thử lại."
         : "Không thể kết nối tới máy chủ DurianCare.");
     return new AuthApiError(
       message,
       error.response?.status,
-      parseRetryAfter(error.response?.headers?.["retry-after"]),
+      error.response?.data?.retryAfterSeconds ??
+        parseRetryAfter(error.response?.headers?.["retry-after"]),
     );
   }
   return new AuthApiError(

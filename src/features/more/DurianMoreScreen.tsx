@@ -1,4 +1,16 @@
-import { Activity, Bell, QrCode, Search, UserRound, Users } from "lucide-react-native";
+import {
+  Activity,
+  Bell,
+  History,
+  ImagePlus,
+  KeyRound,
+  PencilLine,
+  QrCode,
+  Search,
+  ShieldCheck,
+  UserRound,
+  Users,
+} from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -11,6 +23,18 @@ import { durianTheme } from "@/src/theme/durianTheme";
 
 const moreItems = [
   {
+    description: "Chụp ảnh lá bệnh, nhận kết quả chẩn đoán và mở màn hình kết quả chi tiết.",
+    href: "/diagnosis",
+    icon: Activity,
+    title: "Chẩn đoán AI",
+  },
+  {
+    description: "Xem lại toàn bộ lần quét đã lưu trên máy và mở từng kết quả chẩn đoán.",
+    href: "/diagnosis-history",
+    icon: History,
+    title: "Lịch sử chẩn đoán",
+  },
+  {
     description: "Tra cứu bài viết, bệnh hại và tài liệu vận hành theo bộ lọc từ web.",
     href: "/(main)/search",
     icon: Search,
@@ -21,6 +45,12 @@ const moreItems = [
     href: "/(main)/notifications",
     icon: Bell,
     title: "Thông báo",
+  },
+  {
+    description: "Mở chi tiết thông báo mới nhất hoặc mở thẳng một thông báo theo id.",
+    href: "/notification-detail",
+    icon: Bell,
+    title: "Chi tiết thông báo",
   },
   {
     description: "Trao đổi kinh nghiệm, đăng tình trạng vườn và bình luận với nhà nông khác.",
@@ -45,6 +75,36 @@ const moreItems = [
     href: "/(main)/profile",
     icon: UserRound,
     title: "Hồ sơ cá nhân",
+  },
+  {
+    description: "Chỉnh sửa thông tin hồ sơ mà backend đang cho phép cập nhật.",
+    href: "/profile-edit",
+    icon: PencilLine,
+    title: "Chỉnh sửa hồ sơ",
+  },
+  {
+    description: "Quản lý ảnh đại diện bằng camera hoặc thư viện ảnh.",
+    href: "/avatar-management",
+    icon: ImagePlus,
+    title: "Quản lý avatar",
+  },
+  {
+    description: "Màn hình giữ chỗ cho contract đổi mật khẩu khi backend bổ sung.",
+    href: "/change-password",
+    icon: KeyRound,
+    title: "Đổi mật khẩu",
+  },
+  {
+    description: "Trang hồ sơ riêng để vào nhanh từ vai trò Kỹ sư.",
+    href: "/engineer-profile",
+    icon: ShieldCheck,
+    title: "Hồ sơ kỹ sư",
+  },
+  {
+    description: "Màn hình duyệt kỹ sư dành cho tài khoản quản trị.",
+    href: "/admin-engineer-approval",
+    icon: Users,
+    title: "Duyệt kỹ sư",
   },
 ];
 
