@@ -367,7 +367,7 @@ export function DurianNotificationInboxScreen() {
   const openNotificationDetail = useCallback(
     (id: string) => {
       navigation.push({
-        pathname: "/notification-detail",
+        pathname: "/notification-detail" as never,
         params: { id },
       });
     },

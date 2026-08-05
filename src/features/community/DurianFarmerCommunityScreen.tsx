@@ -1,8 +1,8 @@
-import { Heart, MessageCircle, Plus, Send, Users, X } from "lucide-react-native";
-import { useState } from "react";
+import { Check, MessageCircle, RefreshCw, Search, Send, UserRound, UserX, X } from "lucide-react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Image,
-  ImageSourcePropType,
+  ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,238 +13,322 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
-import { useSession } from "@/src/session/SessionContext";
 import { durianTheme } from "@/src/theme/durianTheme";
+import { connectionApi, type ConnectionUser, type UserConnection } from "./connectionApi";
 
-type FarmerPost = {
-  author: string;
-  comments: string[];
-  content: string;
-  id: string;
-  image: ImageSourcePropType;
-  likes: number;
-  location: string;
-  tag: string;
-  time: string;
+type TabKey = "COMMUNITY" | "PHONE" | "REQUESTS" | "CONNECTED";
+
+const relationText: Record<ConnectionUser["relationStatus"], string> = {
+  NONE: "Chưa kết nối",
+  REQUEST_SENT: "Đã gửi lời mời",
+  REQUEST_RECEIVED: "Chờ bạn phản hồi",
+  CONNECTED: "Đã kết nối",
+  BLOCKED: "Đã chặn",
 };
 
-const initialPosts: FarmerPost[] = [
-  {
-    author: "Chú Bảy Vườn Ri6",
-    comments: ["Nên kiểm tra thêm mặt dưới lá và độ ẩm trong tán."],
-    content:
-      "Sau ba ngày mưa liên tục, các đốm tròn màu nâu cam xuất hiện nhiều hơn trên lá già. Mọi người thường xử lý bước đầu thế nào?",
-    id: "algal-spot",
-    image: require("../../../assets/images/community/algal-leaf-spot.jpg"),
-    likes: 24,
-    location: "Cai Lậy, Tiền Giang",
-    tag: "Đốm rong",
-    time: "2 giờ trước",
-  },
-  {
-    author: "Nhà vườn Cô Lan",
-    comments: ["Cần tỉa thông tán và tránh tưới muộn vào chiều tối."],
-    content:
-      "Mép lá đang khô nhanh ở Khu B. Tôi đã đánh dấu cây và gửi ảnh cho kỹ sư để theo dõi thêm.",
-    id: "leaf-blight",
-    image: require("../../../assets/images/community/leaf-blight.jpg"),
-    likes: 18,
-    location: "Châu Thành, Bến Tre",
-    tag: "Cháy lá",
-    time: "Hôm qua",
-  },
-];
-
 export function DurianFarmerCommunity() {
-  const { session } = useSession();
-  const [posts, setPosts] = useState(initialPosts);
-  const [likedPostIds, setLikedPostIds] = useState<string[]>([]);
-  const [openComments, setOpenComments] = useState<string | null>(null);
-  const [commentDraft, setCommentDraft] = useState("");
-  const [showComposer, setShowComposer] = useState(false);
-  const [postTitle, setPostTitle] = useState("");
-  const [postContent, setPostContent] = useState("");
+  const [tab, setTab] = useState<TabKey>("COMMUNITY");
+  const [query, setQuery] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneResult, setPhoneResult] = useState<ConnectionUser | null>(null);
+  const [communityUsers, setCommunityUsers] = useState<ConnectionUser[]>([]);
+  const [incoming, setIncoming] = useState<UserConnection[]>([]);
+  const [outgoing, setOutgoing] = useState<UserConnection[]>([]);
+  const [connections, setConnections] = useState<UserConnection[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
-  function toggleLike(postId: string) {
-    setLikedPostIds((current) =>
-      current.includes(postId)
-        ? current.filter((id) => id !== postId)
-        : [...current, postId],
-    );
+  const phoneError = useMemo(() => {
+    const value = phoneNumber.trim();
+    if (!value) return "";
+    return /^[0-9+() .-]{8,30}$/.test(value) ? "" : "Số điện thoại chưa đúng định dạng.";
+  }, [phoneNumber]);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [community, incomingRequests, outgoingRequests, connected] = await Promise.all([
+        connectionApi.communityUsers(query),
+        connectionApi.incoming(),
+        connectionApi.outgoing(),
+        connectionApi.connections(),
+      ]);
+      setCommunityUsers(community.items);
+      setIncoming(incomingRequests);
+      setOutgoing(outgoingRequests);
+      setConnections(connected.items);
+    } catch (loadError) {
+      setError(messageOf(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [query]);
+
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
+
+  async function runAction(id: string, action: () => Promise<unknown>) {
+    if (actionId) return;
+    setActionId(id);
+    setError("");
+    try {
+      await action();
+      await loadAll();
+      if (phoneResult && phoneNumber.trim()) {
+        setPhoneResult(await connectionApi.searchByPhone(phoneNumber.trim()));
+      }
+    } catch (actionError) {
+      setError(messageOf(actionError));
+    } finally {
+      setActionId(null);
+    }
   }
 
-  function addComment(postId: string) {
-    const comment = commentDraft.trim();
-    if (!comment) return;
-    setPosts((current) =>
-      current.map((post) =>
-        post.id === postId ? { ...post, comments: [...post.comments, comment] } : post,
-      ),
-    );
-    setCommentDraft("");
-  }
-
-  function publishPost() {
-    const content = postContent.trim();
-    if (!content) return;
-
-    setPosts((current) => [
-      {
-        author: session?.user.name ?? "Nhà nông DurianCare",
-        comments: [],
-        content,
-        id: `post-${Date.now()}`,
-        image: require("../../../assets/images/community/leaf-blight.jpg"),
-        likes: 0,
-        location: "Khu A - Vườn An Nhiên",
-        tag: postTitle.trim() || "Theo dõi bệnh lá",
-        time: "Vừa đăng",
-      },
-      ...current,
-    ]);
-    setPostTitle("");
-    setPostContent("");
-    setShowComposer(false);
+  async function searchByPhone() {
+    if (phoneError || !phoneNumber.trim()) return;
+    setLoading(true);
+    setError("");
+    setPhoneResult(null);
+    try {
+      setPhoneResult(await connectionApi.searchByPhone(phoneNumber.trim()));
+    } catch (searchError) {
+      setError(messageOf(searchError));
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <DurianScreenHeader
-        eyebrow="MẠNG LƯỚI NHÀ NÔNG"
-        icon={Users}
-        title="Cộng đồng DurianCare"
-        subtitle="Chia sẻ ảnh bệnh lá và trao đổi kinh nghiệm canh tác cùng nhà nông."
+        eyebrow="KẾT NỐI DURIANCARE"
+        icon={UserRound}
+        title="Cộng đồng"
+        subtitle="Tìm nông hộ hoặc kỹ sư nông nghiệp bằng dữ liệu thật từ DurianCare."
       />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Pressable onPress={() => setShowComposer((value) => !value)} style={styles.createButton}>
-          {showComposer ? (
-            <X color={durianTheme.colors.mossDark} size={20} />
-          ) : (
-            <Plus color={durianTheme.colors.mossDark} size={20} />
-          )}
-          <Text style={styles.createButtonText}>
-            {showComposer ? "Đóng trình soạn bài" : "Đăng tình trạng vườn"}
-          </Text>
-        </Pressable>
+        <View style={styles.tabs}>
+          <TabButton active={tab === "COMMUNITY"} label="Cộng đồng" onPress={() => setTab("COMMUNITY")} />
+          <TabButton active={tab === "PHONE"} label="Tìm SĐT" onPress={() => setTab("PHONE")} />
+          <TabButton active={tab === "REQUESTS"} label={`Lời mời${incoming.length ? ` (${incoming.length})` : ""}`} onPress={() => setTab("REQUESTS")} />
+          <TabButton active={tab === "CONNECTED"} label="Đã kết nối" onPress={() => setTab("CONNECTED")} />
+        </View>
 
-        {showComposer ? (
-          <View style={styles.postComposer}>
-            <Text style={styles.composerTitle}>Tạo bài viết mới</Text>
-            <TextInput
-              onChangeText={setPostTitle}
-              placeholder="Chủ đề, ví dụ: Cháy lá Khu A"
-              placeholderTextColor={durianTheme.colors.muted}
-              style={styles.postTitleInput}
-              value={postTitle}
-            />
-            <TextInput
-              multiline
-              onChangeText={setPostContent}
-              placeholder="Mô tả tình trạng lá và kinh nghiệm cần trao đổi..."
-              placeholderTextColor={durianTheme.colors.muted}
-              style={styles.postContentInput}
-              value={postContent}
-            />
-            <View style={styles.attachmentNote}>
-              <Text style={styles.attachmentNoteText}>
-                Ảnh bệnh lá sẽ được đính kèm từ bộ nhớ thiết bị trước khi đăng bài.
-              </Text>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        {tab === "COMMUNITY" ? (
+          <View style={styles.section}>
+            <View style={styles.searchRow}>
+              <TextInput
+                onChangeText={setQuery}
+                placeholder="Tìm theo tên hoặc khu vực"
+                placeholderTextColor={durianTheme.colors.muted}
+                style={styles.searchInput}
+                value={query}
+              />
+              <IconButton icon={Search} onPress={() => void loadAll()} />
+              <IconButton icon={RefreshCw} onPress={() => void loadAll()} />
             </View>
-            <Pressable onPress={publishPost} style={styles.publishButton}>
-              <Send color={durianTheme.colors.mossDark} size={18} />
-              <Text style={styles.publishButtonText}>Đăng bài</Text>
-            </Pressable>
+            {loading ? <ActivityIndicator color={durianTheme.colors.moss} /> : null}
+            {!loading && communityUsers.length === 0 ? <EmptyText text="Không có người dùng phù hợp." /> : null}
+            {communityUsers.map((user) => (
+              <UserCard
+                key={user.id}
+                actionId={actionId}
+                onAccept={(connectionId) => runAction(connectionId, () => connectionApi.accept(connectionId))}
+                onConnect={() => runAction(user.id, () => connectionApi.sendRequest(user.id, "COMMUNITY"))}
+                user={user}
+              />
+            ))}
           </View>
         ) : null}
 
-        {posts.map((post) => {
-          const isLiked = likedPostIds.includes(post.id);
-          const commentsVisible = openComments === post.id;
-          return (
-            <View key={post.id} style={styles.postCard}>
-              <View style={styles.authorRow}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{post.author.charAt(0)}</Text>
-                </View>
-                <View style={styles.authorCopy}>
-                  <Text style={styles.author}>{post.author}</Text>
-                  <Text style={styles.location}>{post.location}</Text>
-                </View>
-                <Text style={styles.time}>{post.time}</Text>
-              </View>
-
-              <Image resizeMode="cover" source={post.image} style={styles.postImage} />
-
-              <View style={styles.postBody}>
-                <View style={styles.tag}>
-                  <Text style={styles.tagText}>{post.tag}</Text>
-                </View>
-                <Text style={styles.postContent}>{post.content}</Text>
-
-                <View style={styles.actions}>
-                  <Pressable onPress={() => toggleLike(post.id)} style={styles.action}>
-                    <Heart
-                      color={isLiked ? durianTheme.colors.danger : durianTheme.colors.moss}
-                      fill={isLiked ? durianTheme.colors.danger : "transparent"}
-                      size={20}
-                    />
-                    <Text style={styles.actionText}>
-                      {post.likes + (isLiked ? 1 : 0)} Thích
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => setOpenComments(commentsVisible ? null : post.id)}
-                    style={styles.action}
-                  >
-                    <MessageCircle color={durianTheme.colors.moss} size={20} />
-                    <Text style={styles.actionText}>{post.comments.length} Bình luận</Text>
-                  </Pressable>
-                </View>
-
-                {commentsVisible ? (
-                  <View style={styles.comments}>
-                    {post.comments.map((comment, index) => (
-                      <View key={`${post.id}-${index}`} style={styles.commentBubble}>
-                        <Text style={styles.commentAuthor}>Nhà nông DurianCare</Text>
-                        <Text style={styles.commentText}>{comment}</Text>
-                      </View>
-                    ))}
-                    <View style={styles.commentComposer}>
-                      <TextInput
-                        onChangeText={setCommentDraft}
-                        placeholder="Chia sẻ kinh nghiệm..."
-                        placeholderTextColor={durianTheme.colors.muted}
-                        style={styles.commentInput}
-                        value={commentDraft}
-                      />
-                      <Pressable onPress={() => addComment(post.id)} style={styles.commentSend}>
-                        <Send color={durianTheme.colors.mossDark} size={17} />
-                      </Pressable>
-                    </View>
-                  </View>
-                ) : null}
-              </View>
+        {tab === "PHONE" ? (
+          <View style={styles.section}>
+            <View style={styles.searchRow}>
+              <TextInput
+                keyboardType="phone-pad"
+                onChangeText={setPhoneNumber}
+                placeholder="0901234567"
+                placeholderTextColor={durianTheme.colors.muted}
+                style={styles.searchInput}
+                value={phoneNumber}
+              />
+              <IconButton disabled={!!phoneError || !phoneNumber.trim()} icon={Search} onPress={() => void searchByPhone()} />
             </View>
-          );
-        })}
+            {phoneError ? <Text style={styles.error}>{phoneError}</Text> : null}
+            {loading ? <ActivityIndicator color={durianTheme.colors.moss} /> : null}
+            {phoneResult ? (
+              <UserCard
+                actionId={actionId}
+                onAccept={(connectionId) => runAction(connectionId, () => connectionApi.accept(connectionId))}
+                onConnect={() => runAction(phoneResult.id, () => connectionApi.sendRequest(phoneResult.id, "PHONE_SEARCH"))}
+                user={phoneResult}
+              />
+            ) : !loading && phoneNumber.trim() && !error ? (
+              <EmptyText text="Không tìm thấy người dùng phù hợp." />
+            ) : null}
+          </View>
+        ) : null}
+
+        {tab === "REQUESTS" ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Lời mời nhận được</Text>
+            {incoming.length === 0 ? <EmptyText text="Chưa có lời mời mới." /> : null}
+            {incoming.map((item) => (
+              <RequestCard key={item.id} connection={item}>
+                <ActionButton icon={Check} label="Chấp nhận" onPress={() => runAction(item.id, () => connectionApi.accept(item.id))} />
+                <ActionButton danger icon={X} label="Từ chối" onPress={() => runAction(item.id, () => connectionApi.reject(item.id))} />
+              </RequestCard>
+            ))}
+            <Text style={styles.sectionTitle}>Lời mời đã gửi</Text>
+            {outgoing.length === 0 ? <EmptyText text="Bạn chưa gửi lời mời nào." /> : null}
+            {outgoing.map((item) => (
+              <RequestCard key={item.id} connection={item}>
+                <ActionButton danger icon={X} label="Hủy" onPress={() => runAction(item.id, () => connectionApi.cancel(item.id))} />
+              </RequestCard>
+            ))}
+          </View>
+        ) : null}
+
+        {tab === "CONNECTED" ? (
+          <View style={styles.section}>
+            {connections.length === 0 ? <EmptyText text="Chưa có kết nối nào." /> : null}
+            {connections.map((item) => (
+              <RequestCard key={item.id} connection={item}>
+                <ActionButton icon={MessageCircle} label="Nhắn tin" onPress={() => undefined} />
+                <ActionButton
+                  danger
+                  icon={UserX}
+                  label="Hủy kết nối"
+                  onPress={() =>
+                    Alert.alert("Hủy kết nối", "Bạn chắc chắn muốn hủy kết nối này?", [
+                      { text: "Không", style: "cancel" },
+                      { text: "Hủy kết nối", style: "destructive", onPress: () => void runAction(item.id, () => connectionApi.disconnect(item.id)) },
+                    ])
+                  }
+                />
+              </RequestCard>
+            ))}
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function UserCard({
+  user,
+  actionId,
+  onConnect,
+  onAccept,
+}: {
+  user: ConnectionUser;
+  actionId: string | null;
+  onConnect: () => void;
+  onAccept: (connectionId: string) => void;
+}) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.identityRow}>
+        <View style={styles.avatar}><Text style={styles.avatarText}>{user.fullName.charAt(0).toUpperCase()}</Text></View>
+        <View style={styles.identityCopy}>
+          <Text style={styles.name}>{user.fullName}</Text>
+          <Text style={styles.meta}>{user.role === "ENGINEER" ? "Kỹ sư" : "Nông hộ"} · {user.region || "Chưa cập nhật khu vực"}</Text>
+          {user.phoneNumber ? <Text style={styles.meta}>{user.phoneNumber}</Text> : null}
+        </View>
+      </View>
+      <Text style={styles.badge}>{relationText[user.relationStatus]}</Text>
+      <View style={styles.actions}>
+        {user.relationStatus === "NONE" ? (
+          <ActionButton loading={actionId === user.id} icon={Send} label="Kết nối" onPress={onConnect} />
+        ) : null}
+        {user.relationStatus === "REQUEST_RECEIVED" && user.connectionId ? (
+          <ActionButton loading={actionId === user.connectionId} icon={Check} label="Chấp nhận" onPress={() => onAccept(user.connectionId!)} />
+        ) : null}
+        {user.relationStatus === "CONNECTED" ? <ActionButton icon={MessageCircle} label="Nhắn tin" onPress={() => undefined} /> : null}
+      </View>
+    </View>
+  );
+}
+
+function RequestCard({ connection, children }: { connection: UserConnection; children: React.ReactNode }) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.identityRow}>
+        <View style={styles.avatar}><Text style={styles.avatarText}>{connection.user.fullName.charAt(0).toUpperCase()}</Text></View>
+        <View style={styles.identityCopy}>
+          <Text style={styles.name}>{connection.user.fullName}</Text>
+          <Text style={styles.meta}>{connection.user.role === "ENGINEER" ? "Kỹ sư" : "Nông hộ"}</Text>
+        </View>
+      </View>
+      <View style={styles.actions}>{children}</View>
+    </View>
+  );
+}
+
+function TabButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={[styles.tab, active && styles.tabActive]}>
+      <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function IconButton({ disabled, icon: Icon, onPress }: { disabled?: boolean; icon: typeof Search; onPress: () => void }) {
+  return (
+    <Pressable disabled={disabled} onPress={onPress} style={[styles.iconButton, disabled && styles.disabled]}>
+      <Icon color={durianTheme.colors.mossDark} size={18} />
+    </Pressable>
+  );
+}
+
+function ActionButton({
+  danger,
+  icon: Icon,
+  label,
+  loading,
+  onPress,
+}: {
+  danger?: boolean;
+  icon: typeof Send;
+  label: string;
+  loading?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={[styles.actionButton, danger && styles.actionDanger]}>
+      {loading ? <ActivityIndicator color={durianTheme.colors.mossDark} size="small" /> : <Icon color={danger ? durianTheme.colors.danger : durianTheme.colors.mossDark} size={16} />}
+      <Text style={[styles.actionButtonText, danger && styles.actionDangerText]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function EmptyText({ text }: { text: string }) {
+  return <Text style={styles.empty}>{text}</Text>;
+}
+
+function messageOf(error: unknown) {
+  return error instanceof Error ? error.message : "Không thể tải dữ liệu kết nối.";
+}
+
 const styles = StyleSheet.create({
-  action: { alignItems: "center", flexDirection: "row", gap: 7 },
-  actionText: { color: durianTheme.colors.muted, fontSize: 12, fontWeight: "800" },
-  actions: {
-    borderTopColor: durianTheme.colors.mossSoft,
-    borderTopWidth: 1,
+  actionButton: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.durianYellow,
+    borderRadius: 12,
     flexDirection: "row",
-    gap: 24,
-    paddingTop: 14,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
   },
-  author: { color: durianTheme.colors.ink, fontSize: 14, fontWeight: "900" },
-  authorCopy: { flex: 1 },
-  authorRow: { alignItems: "center", flexDirection: "row", gap: 10, padding: 16 },
+  actionButtonText: { color: durianTheme.colors.mossDark, fontSize: 12, fontWeight: "900" },
+  actionDanger: { backgroundColor: "#FDECEC" },
+  actionDangerText: { color: durianTheme.colors.danger },
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
   avatar: {
     alignItems: "center",
     backgroundColor: durianTheme.colors.moss,
@@ -254,92 +338,49 @@ const styles = StyleSheet.create({
     width: 44,
   },
   avatarText: { color: durianTheme.colors.durianYellow, fontSize: 18, fontWeight: "900" },
-  commentAuthor: { color: durianTheme.colors.moss, fontSize: 10, fontWeight: "900" },
-  commentBubble: { backgroundColor: durianTheme.colors.canvas, borderRadius: 12, gap: 3, padding: 10 },
-  commentComposer: { alignItems: "center", flexDirection: "row", gap: 8 },
-  commentInput: {
-    backgroundColor: durianTheme.colors.canvas,
-    borderRadius: 15,
-    color: durianTheme.colors.ink,
-    flex: 1,
-    fontSize: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  commentSend: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.durianYellow,
-    borderRadius: 18,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-  comments: { gap: 8 },
-  commentText: { color: durianTheme.colors.ink, fontSize: 12, lineHeight: 17 },
-  composerTitle: { color: durianTheme.colors.ink, fontSize: 16, fontWeight: "900" },
-  content: { gap: 16, padding: 18, paddingBottom: 40 },
-  createButton: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.durianYellow,
-    borderRadius: durianTheme.radius.md,
-    flexDirection: "row",
-    gap: 8,
-    justifyContent: "center",
-    paddingVertical: 14,
-  },
-  createButtonText: { color: durianTheme.colors.mossDark, fontSize: 13, fontWeight: "900" },
-  location: { color: durianTheme.colors.muted, fontSize: 11, marginTop: 2 },
-  postBody: { gap: 13, padding: 16 },
-  postCard: { backgroundColor: durianTheme.colors.surface, borderRadius: durianTheme.radius.lg, overflow: "hidden" },
-  postComposer: {
-    backgroundColor: durianTheme.colors.surface,
-    borderRadius: durianTheme.radius.md,
-    gap: 11,
-    padding: 16,
-  },
-  postContent: { color: durianTheme.colors.ink, fontSize: 14, lineHeight: 22 },
-  postContentInput: {
-    backgroundColor: durianTheme.colors.canvas,
-    borderRadius: 13,
-    color: durianTheme.colors.ink,
-    fontSize: 13,
-    minHeight: 100,
-    padding: 12,
-    textAlignVertical: "top",
-  },
-  postImage: { height: 250, width: "100%" },
-  postTitleInput: {
-    backgroundColor: durianTheme.colors.canvas,
-    borderRadius: 13,
-    color: durianTheme.colors.ink,
-    fontSize: 13,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-  },
-  attachmentNote: {
-    backgroundColor: durianTheme.colors.mossSoft,
-    borderRadius: 11,
-    padding: 10,
-  },
-  attachmentNoteText: { color: durianTheme.colors.moss, fontSize: 11, lineHeight: 16 },
-  publishButton: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.durianYellow,
-    borderRadius: 13,
-    flexDirection: "row",
-    gap: 8,
-    justifyContent: "center",
-    paddingVertical: 12,
-  },
-  publishButtonText: { color: durianTheme.colors.mossDark, fontSize: 12, fontWeight: "900" },
-  safeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 },
-  tag: {
+  badge: {
     alignSelf: "flex-start",
     backgroundColor: durianTheme.colors.mossSoft,
-    borderRadius: durianTheme.radius.pill,
+    borderRadius: 999,
+    color: durianTheme.colors.moss,
+    fontSize: 11,
+    fontWeight: "900",
+    marginTop: 12,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 5,
   },
-  tagText: { color: durianTheme.colors.moss, fontSize: 10, fontWeight: "900" },
-  time: { color: durianTheme.colors.muted, fontSize: 10 },
+  card: { backgroundColor: durianTheme.colors.surface, borderRadius: durianTheme.radius.md, padding: 14 },
+  content: { gap: 14, padding: 18, paddingBottom: 40 },
+  disabled: { opacity: 0.5 },
+  empty: { color: durianTheme.colors.muted, fontSize: 13, fontWeight: "800", paddingVertical: 12, textAlign: "center" },
+  error: { backgroundColor: "#FDECEC", borderRadius: 12, color: durianTheme.colors.danger, fontSize: 12, fontWeight: "800", padding: 12 },
+  iconButton: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.durianYellow,
+    borderRadius: 14,
+    height: 46,
+    justifyContent: "center",
+    width: 46,
+  },
+  identityCopy: { flex: 1, gap: 3 },
+  identityRow: { alignItems: "center", flexDirection: "row", gap: 10 },
+  meta: { color: durianTheme.colors.muted, fontSize: 11, fontWeight: "700" },
+  name: { color: durianTheme.colors.ink, fontSize: 14, fontWeight: "900" },
+  safeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 },
+  searchInput: {
+    backgroundColor: durianTheme.colors.surface,
+    borderRadius: 14,
+    color: durianTheme.colors.ink,
+    flex: 1,
+    fontSize: 13,
+    paddingHorizontal: 12,
+  },
+  searchRow: { flexDirection: "row", gap: 8 },
+  section: { gap: 12 },
+  sectionTitle: { color: durianTheme.colors.ink, fontSize: 15, fontWeight: "900", marginTop: 8 },
+  tab: { alignItems: "center", backgroundColor: durianTheme.colors.surface, borderRadius: 12, flex: 1, minHeight: 42, justifyContent: "center", paddingHorizontal: 6 },
+  tabActive: { backgroundColor: durianTheme.colors.moss },
+  tabText: { color: durianTheme.colors.moss, fontSize: 11, fontWeight: "900", textAlign: "center" },
+  tabTextActive: { color: durianTheme.colors.durianYellow },
+  tabs: { flexDirection: "row", gap: 7 },
 });
