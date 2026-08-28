@@ -1,7 +1,9 @@
 import { Tabs } from "expo-router";
 import {
+  BadgeCheck,
   BookOpen,
   CalendarDays,
+  Camera,
   LayoutDashboard,
   MessageCircle,
   MoreHorizontal,
@@ -116,6 +118,18 @@ export default function DurianCareMainTabs() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="camera"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="export-compliance"
+        options={{
+          href: null,
+        }}
+      />
 
       <Tabs.Screen
         name="authorization"
@@ -133,6 +147,12 @@ export default function DurianCareMainTabs() {
 
       <Tabs.Screen
         name="traceability"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="qr-scan"
         options={{
           href: null,
         }}

@@ -1,6 +1,8 @@
 import {
   Activity,
+  BadgeCheck,
   Bell,
+  Camera,
   History,
   ImagePlus,
   KeyRound,
@@ -63,6 +65,18 @@ const moreItems = [
     href: "/(main)/sensors",
     icon: Activity,
     title: "Thiết bị IoT",
+  },
+  {
+    description: "Xem ảnh chụp từ ESP32-CAM, chụp ngay và xem kết quả chẩn đoán bệnh lá AI.",
+    href: "/(main)/camera",
+    icon: Camera,
+    title: "Camera AI Vision",
+  },
+  {
+    description: "Điểm sẵn sàng xuất khẩu, kiểm tra dư lượng MRL và thời gian cách ly PHI theo từng thị trường.",
+    href: "/(main)/export-compliance",
+    icon: BadgeCheck,
+    title: "Đánh giá Xuất khẩu",
   },
   {
     description: "Quản lý hồ sơ vụ mùa và tạo mã QR định danh nông sản.",
