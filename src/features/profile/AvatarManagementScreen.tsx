@@ -1,11 +1,12 @@
 import * as ImagePicker from "expo-image-picker";
 import { Camera, Image as ImageIcon, LoaderCircle, RefreshCcw, Save, Trash2, UserRound } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
 import { useSession } from "@/src/session/SessionContext";
+import { DurianRemoteImage } from "@/src/components/DurianRemoteImage";
 import { durianTheme } from "@/src/theme/durianTheme";
 
 import { profileClient, ProfileApiError } from "./profileApi";
@@ -262,7 +263,7 @@ export function AvatarManagementScreen() {
         <View style={styles.previewCard}>
           <View style={styles.previewFrame}>
             {currentAvatar ? (
-              <Image source={{ uri: currentAvatar }} resizeMode="cover" style={styles.previewImage} />
+              <DurianRemoteImage feature="profile-avatar" uri={currentAvatar} resizeMode="cover" style={styles.previewImage} />
             ) : (
               <Text style={styles.previewInitials}>{currentInitials}</Text>
             )}
@@ -339,9 +340,9 @@ export function AvatarManagementScreen() {
 const styles = StyleSheet.create({
   actionButton: {
     alignItems: "center",
-    backgroundColor: "#F7F9F4",
-    borderColor: "#D9E3DB",
-    borderRadius: 18,
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.sm,
     borderWidth: 1,
     flexDirection: "row",
     gap: 8,
@@ -360,13 +361,13 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 16,
   },
-  content: { gap: 14, padding: 18, paddingBottom: 44 },
+  content: { gap: durianTheme.spacing.lg, padding: durianTheme.spacing.xl, paddingBottom: 44 },
   dangerButton: {
     alignItems: "center",
-    backgroundColor: "#FCE8E5",
-    borderRadius: 18,
+    backgroundColor: durianTheme.colors.dangerSoft,
+    borderRadius: durianTheme.radius.md,
     borderWidth: 1,
-    borderColor: "#F0C2BA",
+    borderColor: durianTheme.colors.danger,
     flexDirection: "row",
     gap: 8,
     minHeight: 46,

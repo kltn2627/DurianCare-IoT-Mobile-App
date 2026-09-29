@@ -1,64 +1,50 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
-import type { PredictionBoundingBox } from "@/src/features/scanner/diseasePredictionApi";
-import type { DurianDisease } from "@/src/features/scanner/diseaseCatalog";
+import {
+  deletePredictionHistory,
+  getPredictionHistoryItem,
+  listPredictionHistory,
+  type PredictionHistoryItem,
+} from "@/src/features/scanner/diseasePredictionApi";
 
 import type { DiagnosisHistoryEntry } from "./types";
 
-const STORAGE_KEY = "duriancare.diagnosis.history.v1";
-
-type NewDiagnosisEntry = {
-  boundingBox: PredictionBoundingBox;
-  confidence: number;
-  disease: DurianDisease;
-  imageUri: string;
-};
-
-async function readHistory(): Promise<DiagnosisHistoryEntry[]> {
-  const raw = await AsyncStorage.getItem(STORAGE_KEY);
-  if (!raw) return [];
-
-  try {
-    const parsed = JSON.parse(raw) as DiagnosisHistoryEntry[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+function toDiagnosisEntry(item: PredictionHistoryItem): DiagnosisHistoryEntry {
+  return {
+    boundingBox: item.data.boundingBox ?? { height: 34, left: 24, top: 22, width: 52 },
+    confidence: item.confidence,
+    confidenceText: item.confidenceText,
+    createdAt: item.diagnosedAt,
+    decisionSupport: item.data.decisionSupport,
+    diseaseCode: item.predictedDisease,
+    diseaseName: item.data.disease.name,
+    id: item.id,
+    image: item.image,
+    imageUri: item.image?.url ?? "",
+    originalFilename: item.originalFilename,
+    predictedDisease: item.predictedDisease,
+    recommendation: item.data.recommendation,
+    severity: item.severity,
+    status: item.status,
+    source: item.source,
+    deviceId: item.deviceId,
+    topPredictions: item.data.topPredictions,
+    usedDetectionCrop: item.usedDetectionCrop,
+  };
 }
 
-async function writeHistory(entries: DiagnosisHistoryEntry[]) {
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-}
-
-export async function loadDiagnosisHistory() {
-  const entries = await readHistory();
-  return entries.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+export async function loadDiagnosisHistory(page = 1, pageSize = 20) {
+  const response = await listPredictionHistory({ page, pageSize });
+  return response.items.map(toDiagnosisEntry);
 }
 
 export async function getDiagnosisHistoryEntry(entryId: string) {
-  const entries = await readHistory();
-  return entries.find((entry) => entry.id === entryId) ?? null;
+  const entry = await getPredictionHistoryItem(entryId);
+  return entry ? toDiagnosisEntry(entry) : null;
 }
 
-export async function saveDiagnosisHistoryEntry(input: NewDiagnosisEntry) {
-  const entry: DiagnosisHistoryEntry = {
-    boundingBox: input.boundingBox,
-    confidence: input.confidence,
-    createdAt: new Date().toISOString(),
-    diseaseCode: input.disease.code,
-    diseaseName: input.disease.name,
-    id: `diagnosis-${Date.now()}`,
-    imageUri: input.imageUri,
-  };
-
-  const entries = await readHistory();
-  const nextEntries = [entry, ...entries.filter((current) => current.imageUri !== input.imageUri)];
-  await writeHistory(nextEntries);
-  return entry;
+export async function saveDiagnosisHistoryEntry() {
+  throw new Error("Prediction history is persisted by the backend AI service.");
 }
 
 export async function removeDiagnosisHistoryEntry(entryId: string) {
-  const entries = await readHistory();
-  const nextEntries = entries.filter((entry) => entry.id !== entryId);
-  await writeHistory(nextEntries);
+  await deletePredictionHistory(entryId);
 }

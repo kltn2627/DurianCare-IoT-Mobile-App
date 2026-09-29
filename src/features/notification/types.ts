@@ -8,6 +8,7 @@ export type NotificationItem = {
   type: string;
   isRead: boolean;
   createdAt: string;
+  metadata?: Record<string, unknown> | null;
 };
 
 export type NotificationPageResponse = {

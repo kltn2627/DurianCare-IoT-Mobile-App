@@ -1,4 +1,6 @@
 import { Bot, MessageCircle, Sparkles, UsersRound } from "lucide-react-native";
+import { useLocalSearchParams } from "expo-router";
+import { useEffect } from "react";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -11,7 +13,21 @@ import { DurianExpertChannel } from "./DurianExpertChannel";
 type ChatChannel = "ai" | "expert";
 
 export function DurianFieldChannelScreen() {
+  const params = useLocalSearchParams<{
+    conversationId?: string | string[];
+    shareText?: string | string[];
+  }>();
+  const initialConversationId = Array.isArray(params.conversationId)
+    ? params.conversationId[0]
+    : params.conversationId;
+  const initialShareText = Array.isArray(params.shareText)
+    ? params.shareText[0]
+    : params.shareText;
   const [channel, setChannel] = useState<ChatChannel>("ai");
+
+  useEffect(() => {
+    if (initialShareText) setChannel("expert");
+  }, [initialShareText]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -45,7 +61,14 @@ export function DurianFieldChannelScreen() {
       </View>
 
       <View style={styles.channel}>
-        {channel === "ai" ? <DurianAiAssistantChannel /> : <DurianExpertChannel />}
+        {channel === "ai" ? (
+          <DurianAiAssistantChannel />
+        ) : (
+          <DurianExpertChannel
+            initialConversationId={initialConversationId}
+            initialShareText={initialShareText}
+          />
+        )}
       </View>
     </SafeAreaView>
   );
@@ -89,13 +112,13 @@ function ChannelTab({
 const styles = StyleSheet.create({
   activeTab: {
     backgroundColor: durianTheme.colors.surface,
-    borderColor: durianTheme.colors.durianYellow,
+     borderColor: durianTheme.colors.moss,
   },
-  activeTabIcon: { backgroundColor: durianTheme.colors.durianYellow },
-  activeTabText: { color: durianTheme.colors.mossDark },
+   activeTabIcon: { backgroundColor: durianTheme.colors.mossSoft },
+   activeTabText: { color: durianTheme.colors.moss },
   channel: { flex: 1 },
   eyebrow: {
-    color: durianTheme.colors.durianYellow,
+     color: durianTheme.colors.moss,
     fontSize: 9,
     fontWeight: "900",
     letterSpacing: 1,
@@ -103,7 +126,9 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: "center",
-    backgroundColor: durianTheme.colors.moss,
+     backgroundColor: durianTheme.colors.surface,
+     borderBottomColor: durianTheme.colors.border,
+     borderBottomWidth: 1,
     flexDirection: "row",
     gap: 11,
     paddingHorizontal: 16,
@@ -112,31 +137,29 @@ const styles = StyleSheet.create({
   headerCopy: { flex: 1 },
   headerIcon: {
     alignItems: "center",
-    backgroundColor: durianTheme.colors.mossDark,
-    borderRadius: 17,
+     backgroundColor: durianTheme.colors.mossSoft,
+     borderRadius: durianTheme.radius.sm,
     height: 46,
     justifyContent: "center",
     width: 46,
   },
   headerTitle: {
-    color: durianTheme.colors.white,
-    fontSize: 17,
-    fontWeight: "900",
-    lineHeight: 23,
+     color: durianTheme.colors.ink,
+     ...durianTheme.typography.bodyStrong,
     marginTop: 1,
   },
   onlineBadge: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.12)",
+     backgroundColor: durianTheme.colors.successSoft,
     borderRadius: durianTheme.radius.pill,
     flexDirection: "row",
     gap: 6,
     minHeight: 36,
     paddingHorizontal: 10,
   },
-  onlineDot: { backgroundColor: "#71D19A", borderRadius: 5, height: 8, width: 8 },
+   onlineDot: { backgroundColor: durianTheme.colors.success, borderRadius: 5, height: 8, width: 8 },
   onlineText: {
-    color: durianTheme.colors.white,
+     color: durianTheme.colors.success,
     fontSize: 10,
     fontWeight: "900",
     lineHeight: 14,

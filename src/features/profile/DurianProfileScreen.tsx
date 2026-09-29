@@ -21,7 +21,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentProps, ComponentType } from "react";
 import {
   Alert,
-  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -34,6 +33,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
 import { useSession } from "@/src/session/SessionContext";
+import { DurianRemoteImage } from "@/src/components/DurianRemoteImage";
 import { durianTheme } from "@/src/theme/durianTheme";
 
 import { profileClient, ProfileApiError } from "./profileApi";
@@ -645,7 +645,7 @@ export function DurianProfileScreen() {
             <View style={styles.avatarWrap}>
               <View style={styles.avatarFrame}>
                 {currentAvatar ? (
-                  <Image source={{ uri: currentAvatar }} style={styles.avatarImage} />
+                  <DurianRemoteImage feature="profile-avatar" uri={currentAvatar} style={styles.avatarImage} />
                 ) : (
                   <Text style={styles.avatarInitials}>{currentInitials}</Text>
                 )}
@@ -874,7 +874,7 @@ export function DurianProfileScreen() {
             <View style={styles.avatarPreviewCard}>
               <View style={styles.avatarPreviewFrame}>
                 {currentAvatar ? (
-                  <Image source={{ uri: currentAvatar }} style={styles.avatarPreviewImage} />
+                  <DurianRemoteImage feature="profile-avatar" uri={currentAvatar} style={styles.avatarPreviewImage} />
                 ) : (
                   <Text style={styles.avatarPreviewInitials}>{currentInitials}</Text>
                 )}
@@ -1069,7 +1069,7 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     alignItems: "flex-start",
-    borderTopColor: "#E7E1CF",
+    borderTopColor: durianTheme.colors.border,
     borderTopWidth: StyleSheet.hairlineWidth,
     gap: 12,
     marginTop: 8,
@@ -1082,9 +1082,9 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     alignItems: "center",
-    backgroundColor: "#F7F9F4",
-    borderColor: "#DFE7D7",
-    borderRadius: 18,
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.sm,
     borderWidth: 1,
     flexDirection: "row",
     gap: 8,
@@ -1100,8 +1100,8 @@ const styles = StyleSheet.create({
   },
   avatarActionButton: {
     alignItems: "center",
-    backgroundColor: "#F8F6EB",
-    borderRadius: 16,
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderRadius: durianTheme.radius.sm,
     flexDirection: "row",
     gap: 8,
     minHeight: 44,

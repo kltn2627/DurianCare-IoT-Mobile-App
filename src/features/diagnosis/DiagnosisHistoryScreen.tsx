@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   FlatList,
-  Image,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -13,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
+import { DurianRemoteImage } from "@/src/components/DurianRemoteImage";
 import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
 import { durianTheme } from "@/src/theme/durianTheme";
 
@@ -146,7 +146,19 @@ export function DurianDiagnosisHistoryScreen() {
             const detail = getDiagnosisDetail(item.diseaseCode);
             return (
               <View style={styles.card}>
-                <Image source={{ uri: item.imageUri }} resizeMode="cover" style={styles.thumbnail} />
+                {item.imageUri ? (
+                  <DurianRemoteImage
+                    feature="diagnosis-history-image"
+                    uri={item.imageUri}
+                    resizeMode="cover"
+                    style={styles.thumbnail}
+                  />
+                ) : (
+                  <View style={[styles.thumbnail, styles.thumbnailEmpty]}>
+                    <Leaf color={durianTheme.colors.moss} size={30} />
+                    <Text style={styles.thumbnailEmptyText}>Không có ảnh</Text>
+                  </View>
+                )}
                 <View style={styles.cardBody}>
                   <View style={styles.cardTopRow}>
                     <View style={styles.metaChip}>
@@ -157,7 +169,9 @@ export function DurianDiagnosisHistoryScreen() {
                   </View>
                   <Text style={styles.title}>{item.diseaseName}</Text>
                   <Text numberOfLines={3} style={styles.summary}>
-                    {detail?.summary ?? "Kết quả chẩn đoán đã được lưu cục bộ trên thiết bị."}
+                    {item.recommendation?.diseaseSummary ??
+                      detail?.summary ??
+                      "Kết quả chẩn đoán được lưu bởi backend AI service."}
                   </Text>
                   <View style={styles.actions}>
                     <Pressable
@@ -200,8 +214,8 @@ const styles = StyleSheet.create({
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "flex-end" },
   card: {
     backgroundColor: durianTheme.colors.surface,
-    borderColor: "#E7E1D1",
-    borderRadius: 24,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
     borderWidth: 1,
     overflow: "hidden",
   },
@@ -213,11 +227,11 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     lineHeight: 22,
   },
-  content: { gap: 14, padding: 18, paddingBottom: 42 },
+  content: { gap: durianTheme.spacing.lg, padding: durianTheme.spacing.xl, paddingBottom: 42 },
   dangerButton: {
     alignItems: "center",
-    backgroundColor: "#FCE8E5",
-    borderRadius: 16,
+    backgroundColor: durianTheme.colors.dangerSoft,
+    borderRadius: durianTheme.radius.sm,
     flexDirection: "row",
     gap: 8,
     minHeight: 44,
@@ -266,8 +280,8 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: "center",
-    backgroundColor: durianTheme.colors.durianYellow,
-    borderRadius: 18,
+    backgroundColor: durianTheme.colors.moss,
+    borderRadius: durianTheme.radius.sm,
     minHeight: 46,
     justifyContent: "center",
     paddingHorizontal: 16,
@@ -282,9 +296,9 @@ const styles = StyleSheet.create({
   safeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 },
   secondaryButton: {
     alignItems: "center",
-    backgroundColor: "#F7F9F4",
-    borderColor: "#D9E3DB",
-    borderRadius: 16,
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.sm,
     borderWidth: 1,
     flexDirection: "row",
     gap: 6,
@@ -303,6 +317,18 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   thumbnail: { height: 190, width: "100%" },
+  thumbnailEmpty: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.mossSoft,
+    gap: 8,
+    justifyContent: "center",
+  },
+  thumbnailEmptyText: {
+    color: durianTheme.colors.moss,
+    fontSize: 12,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
   title: {
     color: durianTheme.colors.ink,
     fontSize: 18,

@@ -6,6 +6,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -84,15 +85,16 @@ export function DurianOtpVerificationScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.content}
       >
-        <Pressable
-          hitSlop={10}
-          onPress={() => navigation.replace("/register")}
-          style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
-        >
-          <ArrowLeft color={durianTheme.colors.moss} size={22} />
-        </Pressable>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <Pressable
+            hitSlop={10}
+            onPress={() => navigation.replace("/register")}
+            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+          >
+            <ArrowLeft color={durianTheme.colors.moss} size={22} />
+          </Pressable>
 
-        <View style={styles.card}>
+          <View style={styles.card}>
           <View style={styles.iconCircle}>
             {isVerified ? (
               <BadgeCheck color={durianTheme.colors.mossDark} size={36} />
@@ -170,7 +172,8 @@ export function DurianOtpVerificationScreen() {
               </Pressable>
             </>
           )}
-        </View>
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -186,7 +189,8 @@ const styles = StyleSheet.create({
     width: 48,
   },
   card: { alignItems: "center", backgroundColor: durianTheme.colors.surface, borderRadius: durianTheme.radius.lg, gap: 17, padding: 24 },
-  content: { flex: 1, gap: 24, justifyContent: "center", padding: 20 },
+  content: { flex: 1 },
+  scrollContent: { flexGrow: 1, gap: 24, justifyContent: "center", padding: 20 },
   disabled: { opacity: 0.55 },
   error: { color: durianTheme.colors.danger, fontSize: 13, fontWeight: "700", lineHeight: 19, textAlign: "center" },
   iconCircle: { alignItems: "center", backgroundColor: durianTheme.colors.durianYellow, borderRadius: 34, height: 68, justifyContent: "center", width: 68 },

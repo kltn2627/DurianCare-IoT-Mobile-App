@@ -26,6 +26,7 @@ import type {
   VerifyOtpRequest,
   AuthSession,
 } from "./authTypes";
+import { getApiBaseUrl } from "@/src/lib/apiBase";
 
 const REFRESH_WINDOW_MS = 60_000;
 
@@ -42,19 +43,11 @@ export class AuthApiError extends Error {
     message: string,
     readonly status?: number,
     readonly retryAfterSeconds?: number,
+    readonly cause?: unknown,
   ) {
     super(message);
     this.name = "AuthApiError";
   }
-}
-
-function getAuthBaseUrl() {
-  const configuredUrl = process.env.EXPO_PUBLIC_AUTH_API_BASE_URL?.trim();
-  if (!configuredUrl) {
-    throw new Error("Thiếu EXPO_PUBLIC_AUTH_API_BASE_URL để kết nối dịch vụ xác thực.");
-  }
-
-  return configuredUrl.replace(/\/$/, "");
 }
 
 const publicAuthClient = axios.create({ timeout: 15_000 });
@@ -95,7 +88,7 @@ export async function refreshAuthTokens(): Promise<AuthTokens> {
 
     try {
       const response = await publicAuthClient.post<AccessTokenResponse>(
-        `${getAuthBaseUrl()}/api/auth/refresh`,
+        `${getApiBaseUrl()}/api/auth/refresh`,
         { refreshToken: currentTokens.refreshToken },
       );
       const nextTokens: AuthTokens = {
@@ -124,7 +117,7 @@ async function attachAccessToken(config: InternalAxiosRequestConfig) {
   if (tokens?.accessToken) {
     config.headers.Authorization = `Bearer ${tokens.accessToken}`;
   }
-  config.baseURL = getAuthBaseUrl();
+  config.baseURL = getApiBaseUrl();
   return config;
 }
 
@@ -153,7 +146,7 @@ authenticatedApiClient.interceptors.response.use(
 export async function loginRequest(request: LoginRequest) {
   try {
     const response = await publicAuthClient.post<AuthenticationResponse>(
-      `${getAuthBaseUrl()}/api/auth/login`,
+      `${getApiBaseUrl()}/api/auth/login`,
       request,
     );
     await saveAuthTokens({
@@ -170,7 +163,7 @@ export async function loginRequest(request: LoginRequest) {
 export async function registerRequest(request: RegisterRequest) {
   try {
     const response = await publicAuthClient.post<MessageResponse>(
-      `${getAuthBaseUrl()}/api/auth/register`,
+      `${getApiBaseUrl()}/api/auth/register`,
       request,
     );
     return response.data;
@@ -207,7 +200,7 @@ export async function registerEngineerRequest(
     });
 
     const response = await publicAuthClient.post<MessageResponse>(
-      `${getAuthBaseUrl()}/api/auth/register/engineer`,
+      `${getApiBaseUrl()}/api/auth/register/engineer`,
       formData,
     );
     return response.data;
@@ -239,7 +232,7 @@ export async function sessionRequest() {
 export async function verifyOtpRequest(request: VerifyOtpRequest) {
   try {
     const response = await publicAuthClient.post<MessageResponse>(
-      `${getAuthBaseUrl()}/api/auth/otp/verify`,
+      `${getApiBaseUrl()}/api/auth/otp/verify`,
       request,
     );
     return response.data;
@@ -251,7 +244,7 @@ export async function verifyOtpRequest(request: VerifyOtpRequest) {
 export async function resendOtpRequest(email: string) {
   try {
     const response = await publicAuthClient.post<MessageResponse>(
-      `${getAuthBaseUrl()}/api/auth/otp/resend`,
+      `${getApiBaseUrl()}/api/auth/otp/resend`,
       { email },
     );
     return response.data;
@@ -327,6 +320,14 @@ export async function authorizedRequest<T>(config: AxiosRequestConfig) {
 export function normalizeAuthError(error: unknown) {
   if (error instanceof AuthApiError) return error;
   if (axios.isAxiosError<ApiErrorBody>(error)) {
+    if (__DEV__) {
+      console.warn("[DurianCare network]", {
+        code: error.code,
+        method: error.config?.method?.toUpperCase(),
+        status: error.response?.status,
+        url: error.config?.url,
+      });
+    }
     const message =
       error.response?.data?.message ??
       error.response?.data?.error ??
@@ -338,6 +339,7 @@ export function normalizeAuthError(error: unknown) {
       error.response?.status,
       error.response?.data?.retryAfterSeconds ??
         parseRetryAfter(error.response?.headers?.["retry-after"]),
+      error,
     );
   }
   return new AuthApiError(
