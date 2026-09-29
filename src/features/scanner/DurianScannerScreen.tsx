@@ -13,7 +13,7 @@ import {
   ShieldCheck,
   WifiOff,
 } from "lucide-react-native";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -28,15 +28,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
 import { durianTheme } from "@/src/theme/durianTheme";
-import { useWorkspace } from "@/src/workspace/WorkspaceContext";
-
-import { saveDiagnosisHistoryEntry } from "@/src/features/diagnosis/diagnosisHistoryStore";
 
 import { useDurianDiseaseCamera } from "./useDurianDiseaseCamera";
 
 export function DurianScannerScreen() {
   const navigation = useDurianSafeNavigation();
-  const { pushScanAlert } = useWorkspace();
   const {
     cameraRef,
     captureAndAnalyze,
@@ -45,6 +41,7 @@ export function DurianScannerScreen() {
     isBusy,
     permission,
     phase,
+    pickAndAnalyze,
     photo,
     prediction,
     requestPermission,
@@ -52,8 +49,6 @@ export function DurianScannerScreen() {
     retryAnalysis,
   } = useDurianDiseaseCamera();
   const [wasPushed, setWasPushed] = useState(false);
-  const [historyEntryId, setHistoryEntryId] = useState<string | null>(null);
-  const lastSavedSignatureRef = useRef<string | null>(null);
 
   useEffect(
     function animateStateChange() {
@@ -62,35 +57,13 @@ export function DurianScannerScreen() {
     [phase],
   );
 
-  useEffect(
-    function persistLatestDiagnosis() {
-      if (!photo || !prediction) return;
-      const signature = `${photo.uri}|${prediction.disease.code}|${prediction.confidence}`;
-      if (lastSavedSignatureRef.current === signature) return;
-
-      lastSavedSignatureRef.current = signature;
-      void saveDiagnosisHistoryEntry({
-        boundingBox: prediction.boundingBox,
-        confidence: prediction.confidence,
-        disease: prediction.disease,
-        imageUri: photo.uri,
-      }).then((entry) => {
-        setHistoryEntryId(entry.id);
-      });
-    },
-    [photo, prediction],
-  );
-
   function handleReset() {
     setWasPushed(false);
-    setHistoryEntryId(null);
-    lastSavedSignatureRef.current = null;
     reset();
   }
 
   function handlePushToChat() {
     if (!prediction || wasPushed) return;
-    pushScanAlert(prediction.disease.name, prediction.confidence);
     setWasPushed(true);
     navigation.push("/(main)/chat");
   }
@@ -102,15 +75,15 @@ export function DurianScannerScreen() {
       createdAt: new Date().toISOString(),
       diseaseCode: prediction.disease.code,
       diseaseName: prediction.disease.name,
-      imageUri: photo.uri,
+      imageUri: prediction.image?.url ?? photo.uri,
     });
-    if (historyEntryId) {
-      params.set("entryId", historyEntryId);
+    if (prediction.historyId) {
+      params.set("entryId", prediction.historyId);
     }
     navigation.push(`/diagnosis-result?${params.toString()}`);
   }
 
-  const boundingBoxStyle = prediction
+  const boundingBoxStyle = prediction?.boundingBox
     ? {
         height: `${prediction.boundingBox.height}%` as `${number}%`,
         left: `${prediction.boundingBox.left}%` as `${number}%`,
@@ -190,7 +163,7 @@ export function DurianScannerScreen() {
                 {phase === "capturing" ? "Đang xử lý ảnh chụp" : "AI đang đọc tổn thương"}
               </Text>
               <Text style={styles.loadingText}>
-                Đang truyền ảnh an toàn đến `/api/v1/predict-disease`
+                Đang truyền ảnh an toàn đến /api/v1/predict
               </Text>
             </View>
           ) : null}
@@ -202,12 +175,20 @@ export function DurianScannerScreen() {
         </View>
 
         {!photo ? (
-          <PrimaryButton
-            disabled={!hasPermission || isBusy}
-            icon={Camera}
-            label="Chụp ảnh và phân tích"
-            onPress={captureAndAnalyze}
-          />
+          <View style={styles.actionRow}>
+            <PrimaryButton
+              compact
+              disabled={!hasPermission || isBusy}
+              icon={Camera}
+              label="Chụp & phân tích"
+              onPress={captureAndAnalyze}
+            />
+            <SecondaryButton
+              icon={ImagePlus}
+              label="Chọn ảnh"
+              onPress={pickAndAnalyze}
+            />
+          </View>
         ) : (
           <View style={styles.actionRow}>
             <SecondaryButton icon={RotateCcw} label="Chụp lại" onPress={handleReset} />
@@ -252,11 +233,11 @@ export function DurianScannerScreen() {
             <View style={styles.resultDivider} />
             <Text style={styles.code}>{prediction.disease.code}</Text>
             <Text style={styles.resultNote}>{prediction.disease.note}</Text>
-            {prediction.inferenceTimeMs !== undefined ? (
-              <Text style={styles.inferenceTime}>
-                FastAPI xử lý trong {Math.round(prediction.inferenceTimeMs)} ms
-              </Text>
-            ) : null}
+            <Text style={styles.inferenceTime}>
+              {prediction.historyId
+                ? `Đã lưu backend: ${prediction.historyId}`
+                : "Backend sẽ lưu lịch sử khi nhận được định danh người dùng."}
+            </Text>
 
             <Pressable
               disabled={wasPushed}
@@ -270,7 +251,7 @@ export function DurianScannerScreen() {
             >
               <MessageCircleWarning color={durianTheme.colors.white} size={20} />
               <Text style={styles.chatButtonText}>
-                {wasPushed ? "Đã gửi cảnh báo" : "Đẩy cảnh báo vào khung chat"}
+                {wasPushed ? "Đang mở chat" : "Mở chat với kỹ sư"}
               </Text>
             </Pressable>
 
@@ -471,7 +452,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     paddingVertical: 7,
   },
-  content: { gap: 16, padding: 18, paddingBottom: 44 },
+  content: { gap: durianTheme.spacing.lg, padding: durianTheme.spacing.xl, paddingBottom: 44 },
   corner: {
     borderColor: durianTheme.colors.durianYellow,
     height: 32,
@@ -502,9 +483,9 @@ const styles = StyleSheet.create({
   disabledButton: { opacity: 0.45 },
   errorCard: {
     alignItems: "flex-start",
-    backgroundColor: "#FFF1EF",
-    borderColor: "#F2C2B9",
-    borderRadius: 18,
+    backgroundColor: durianTheme.colors.dangerSoft,
+    borderColor: durianTheme.colors.danger,
+    borderRadius: durianTheme.radius.md,
     borderWidth: 1,
     flexDirection: "row",
     gap: 12,
@@ -513,14 +494,14 @@ const styles = StyleSheet.create({
   errorCopy: { flex: 1, gap: 3 },
   errorIcon: {
     alignItems: "center",
-    backgroundColor: "#FFE0DA",
-    borderRadius: 13,
+    backgroundColor: durianTheme.colors.dangerSoft,
+    borderRadius: durianTheme.radius.sm,
     height: 44,
     justifyContent: "center",
     width: 44,
   },
   errorMessage: {
-    color: "#7D443A",
+    color: durianTheme.colors.danger,
     fontSize: 12,
     lineHeight: 18,
   },

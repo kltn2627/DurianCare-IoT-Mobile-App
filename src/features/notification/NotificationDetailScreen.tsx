@@ -1,4 +1,4 @@
-import { Bell, CalendarClock, CheckCheck, LoaderCircle, Trash2 } from "lucide-react-native";
+import { Bell, CalendarClock, CheckCheck, ExternalLink, LoaderCircle, Trash2 } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -6,10 +6,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
 import { friendlyApiMessage } from "@/src/lib/feedback";
+import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
 import { useSession } from "@/src/session/SessionContext";
 import { durianTheme } from "@/src/theme/durianTheme";
 
 import { notificationClient, NotificationApiError } from "./notificationApi";
+import { resolveNotificationTarget } from "./notificationTargetResolver";
 import type { NotificationItem } from "./types";
 
 function formatDate(value: string) {
@@ -27,6 +29,7 @@ function formatDate(value: string) {
 export function NotificationDetailScreen() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const { session } = useSession();
+  const navigation = useDurianSafeNavigation();
   const [item, setItem] = useState<NotificationItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<"read" | "delete" | null>(null);
@@ -128,6 +131,23 @@ export function NotificationDetailScreen() {
     ]);
   }, [item, session?.user.id]);
 
+  const openTarget = useCallback(async () => {
+    if (!item) return;
+    if (session?.user.id && !item.isRead) {
+      try {
+        await notificationClient.markRead(session.user.id, item.id);
+        setItem({ ...item, isRead: true });
+      } catch {
+        // Opening the target should still work when a read receipt fails.
+      }
+    }
+    const target = resolveNotificationTarget(item);
+    navigation.push({
+      pathname: target.pathname as never,
+      params: target.params,
+    });
+  }, [item, navigation, session?.user.id]);
+
   if (loading) {
     return (
       <SafeAreaView edges={["top"]} style={styles.safeArea}>
@@ -185,6 +205,19 @@ export function NotificationDetailScreen() {
 
             <View style={styles.actionRow}>
               <Pressable
+                disabled={actionLoading !== null}
+                onPress={() => void openTarget()}
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  actionLoading !== null && styles.disabled,
+                  pressed && actionLoading === null && styles.pressed,
+                ]}
+              >
+                <ExternalLink color={durianTheme.colors.mossDark} size={16} />
+                <Text style={styles.primaryButtonText}>{resolveNotificationTarget(item).label}</Text>
+              </Pressable>
+
+              <Pressable
                 disabled={actionLoading === "read" || item.isRead}
                 onPress={() => void markRead()}
                 style={({ pressed }) => [
@@ -226,7 +259,7 @@ export function NotificationDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  actionRow: { flexDirection: "row", gap: 10, justifyContent: "flex-end" },
+  actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "flex-end" },
   card: {
     backgroundColor: durianTheme.colors.surface,
     borderColor: "#E7E1D1",
@@ -297,6 +330,21 @@ const styles = StyleSheet.create({
   },
   metaRow: { alignItems: "center", flexDirection: "row", justifyContent: "flex-end" },
   pressed: { opacity: 0.78, transform: [{ scale: 0.985 }] },
+  primaryButton: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.durianYellow,
+    borderRadius: 16,
+    flexDirection: "row",
+    gap: 8,
+    minHeight: 44,
+    paddingHorizontal: 14,
+  },
+  primaryButtonText: {
+    color: durianTheme.colors.mossDark,
+    fontSize: 12,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
   safeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 },
   secondaryButton: {
     alignItems: "center",

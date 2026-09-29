@@ -1,23 +1,22 @@
-﻿import {
+import {
+  AlertCircle,
   BellRing,
   BookOpen,
   CalendarDays,
   CheckCircle2,
-  FileChartColumn,
   LogOut,
   MessageCircle,
-  ShieldCheck,
-  ShieldX,
+  RefreshCw,
   Send,
+  ShieldCheck,
   Stethoscope,
-  ThermometerSun,
   Users,
-  Wifi,
+  WifiOff,
 } from "lucide-react-native";
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,264 +24,525 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useSession } from "@/src/session/SessionContext";
+import { chatApi } from "@/src/features/chat/chatApi";
+import type { ChatConversation } from "@/src/features/chat/chatTypes";
+import {
+  listAuthorizedFarms,
+  listCultivationActivities,
+  listCultivationPlans,
+  listOwnedFarms,
+} from "@/src/features/cultivation/api/cultivationApi";
+import {
+  buildFoundationFarmOptions,
+  buildFoundationZoneOptions,
+  shortFoundationId,
+} from "@/src/features/cultivation/api/farmFoundation";
+import type {
+  ActivityStatus,
+  AuthorizedFarm,
+  CultivationActivity,
+  CultivationPlan,
+  FarmCatalog,
+} from "@/src/features/cultivation/api/cultivationTypes";
+import { loadDiagnosisHistory } from "@/src/features/diagnosis/diagnosisHistoryStore";
+import type { DiagnosisHistoryEntry } from "@/src/features/diagnosis/types";
+import { notificationClient } from "@/src/features/notification/notificationApi";
+import type { NotificationItem } from "@/src/features/notification/types";
+import { iotApi } from "@/src/features/iot/iotApi";
+import type { IotDevice } from "@/src/features/iot/types";
 import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
+import { useSession } from "@/src/session/SessionContext";
 import { durianTheme } from "@/src/theme/durianTheme";
+
+type DashboardSource = {
+  activities: CultivationActivity[];
+  authorizedFarms: AuthorizedFarm[];
+  chatConversations: ChatConversation[];
+  diagnoses: DiagnosisHistoryEntry[];
+  iotDevices: IotDevice[];
+  notificationCount: number | null;
+  notifications: NotificationItem[];
+  ownedFarms: FarmCatalog[];
+  plans: CultivationPlan[];
+};
+
+type SectionKey = keyof DashboardSource;
+
+const CLOSED_ACTIVITY_STATUSES = new Set<ActivityStatus>([
+  "COMPLETED",
+  "SKIPPED",
+  "CANCELLED",
+]);
+
+const initialDashboardSource: DashboardSource = {
+  activities: [],
+  authorizedFarms: [],
+  chatConversations: [],
+  diagnoses: [],
+  iotDevices: [],
+  notificationCount: null,
+  notifications: [],
+  ownedFarms: [],
+  plans: [],
+};
+
+const initialErrors: Record<SectionKey, string | null> = {
+  activities: null,
+  authorizedFarms: null,
+  chatConversations: null,
+  diagnoses: null,
+  iotDevices: null,
+  notificationCount: null,
+  notifications: null,
+  ownedFarms: null,
+  plans: null,
+};
 
 export function DurianOperationsScreen() {
   const navigation = useDurianSafeNavigation();
   const { logout, session } = useSession();
-  const isOwner = session?.user.role === "OWNER";
-  const [engineers, setEngineers] = useState([
-    { id: "eng-01", name: "Kỹ sư Trần An", status: "APPROVED" as const },
-    { id: "eng-02", name: "Kỹ sư Lê Hương", status: "PENDING" as const },
-  ]);
+  const [data, setData] = useState<DashboardSource>(initialDashboardSource);
+  const [errors, setErrors] = useState<Record<SectionKey, string | null>>(initialErrors);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const user = session?.user;
+  const isOwner = user?.role === "OWNER";
+  const backendRole = user?.backendRole ?? "GUEST";
+  const chatSupported = backendRole === "FARMER" || backendRole === "ENGINEER";
+
+  const loadDashboard = useCallback(async () => {
+    if (!user) return;
+    setRefreshing(true);
+    const [
+      authorizedFarmsResult,
+      ownedFarmsResult,
+      plansResult,
+      activitiesResult,
+      diagnosesResult,
+      iotDevicesResult,
+      notificationCountResult,
+      notificationsResult,
+      chatResult,
+    ] = await Promise.allSettled([
+      listAuthorizedFarms(),
+      listOwnedFarms(),
+      listCultivationPlans(),
+      listCultivationActivities(),
+      loadDiagnosisHistory(1, 5),
+      iotApi.listDevices(),
+      notificationClient.count(user.id),
+      notificationClient.list(user.id, { page: 0, size: 3, sortBy: "createdAt", sortDirection: "desc" }),
+      chatSupported ? chatApi.listConversations() : Promise.resolve({ conversations: [] }),
+    ]);
+
+    setData({
+      activities: settledValue(activitiesResult, []),
+      authorizedFarms: settledValue(authorizedFarmsResult, []),
+      chatConversations: settledValue(chatResult, { conversations: [] }).conversations,
+      diagnoses: settledValue(diagnosesResult, []),
+      iotDevices: normalizeListResponse(settledValue(iotDevicesResult, { devices: [] }).devices),
+      notificationCount:
+        notificationCountResult.status === "fulfilled" ? notificationCountResult.value.count : null,
+      notifications:
+        notificationsResult.status === "fulfilled" ? notificationsResult.value.notifications : [],
+      ownedFarms: settledValue(ownedFarmsResult, []),
+      plans: settledValue(plansResult, []),
+    });
+    setErrors({
+      activities: settledError(activitiesResult),
+      authorizedFarms: settledError(authorizedFarmsResult),
+      ownedFarms: settledError(ownedFarmsResult),
+      chatConversations: chatSupported ? settledError(chatResult) : null,
+      diagnoses: settledError(diagnosesResult),
+      iotDevices: settledError(iotDevicesResult),
+      notificationCount: settledError(notificationCountResult),
+      notifications: settledError(notificationsResult),
+      plans: settledError(plansResult),
+    });
+    setLoadedOnce(true);
+    setRefreshing(false);
+  }, [chatSupported, user]);
+
+  useEffect(() => {
+    void loadDashboard();
+  }, [loadDashboard]);
 
   async function handleLogout() {
     await logout();
   }
 
-  function showStatusAction(message: string) {
-    Alert.alert("Đã cập nhật trạng thái", message);
-  }
-
-  function inviteEngineer() {
-    const id = `eng-${Date.now()}`;
-    setEngineers((current) => [
-      ...current,
-      { id, name: "Kỹ sư mới được mời", status: "PENDING" },
-    ]);
-  }
-
-  function approveEngineer(engineerId: string) {
-    setEngineers((current) =>
-      current.map((engineer) =>
-        engineer.id === engineerId
-          ? { ...engineer, status: "APPROVED" as const }
-          : engineer,
-      ),
+  const foundation = useMemo(() => {
+    const farms = buildFoundationFarmOptions(data);
+    const zoneCount = farms.reduce(
+      (total, farm) => total + buildFoundationZoneOptions(data, farm.farmId).length,
+      0,
     );
-  }
+    return { farms, zoneCount };
+  }, [data]);
 
-  function revokeEngineer(engineerId: string) {
-    setEngineers((current) =>
-      current.filter((engineer) => engineer.id !== engineerId),
-    );
-  }
+  const activitySummary = useMemo(() => summarizeActivities(data.activities), [data.activities]);
+  const activePlanCount = data.plans.filter((plan) => plan.status === "ACTIVE").length;
+  const unreadChatCount = data.chatConversations.reduce(
+    (total, conversation) => total + Math.max(conversation.unreadCount ?? 0, 0),
+    0,
+  );
+  const latestDiagnosis = data.diagnoses[0];
+  const latestNotification = data.notifications[0];
+  const primaryFarmLabel =
+    foundation.farms[0]?.label ?? (loadedOnce ? "Chưa có dữ liệu vườn" : "Đang tải dữ liệu");
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <ScrollView
         contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            colors={[durianTheme.colors.moss]}
+            onRefresh={loadDashboard}
+            refreshing={refreshing}
+            tintColor={durianTheme.colors.moss}
+          />
+        }
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
           <View style={styles.heroTop}>
             <View style={styles.roleBadge}>
-              <Text style={styles.roleBadgeText}>
-                {isOwner ? "OWNER" : "ENGINEER"}
-              </Text>
+              <Text style={styles.roleBadgeText}>{backendRole}</Text>
             </View>
-            <Pressable hitSlop={12} onPress={handleLogout}>
-              <LogOut color={durianTheme.colors.mist} size={22} />
-            </Pressable>
+            <View style={styles.heroActions}>
+              <Pressable hitSlop={12} onPress={loadDashboard}>
+                <RefreshCw color={durianTheme.colors.mist} size={20} />
+              </Pressable>
+              <Pressable hitSlop={12} onPress={handleLogout}>
+                <LogOut color={durianTheme.colors.mist} size={22} />
+              </Pressable>
+            </View>
           </View>
 
-          <Text style={styles.greeting}>Xin chào, {session?.user.name}</Text>
+          <Text style={styles.greeting}>Xin chào, {user?.name}</Text>
 
           <Text style={styles.heroCopy}>
             {isOwner
-              ? "Theo dõi sức khỏe vườn, cộng tác với kỹ sư và nhận cảnh báo tại một nơi."
-              : "Tiếp nhận ca bệnh, trao đổi thực địa và xây dựng phác đồ số cho nhà vườn."}
+              ? `Tổng quan từ dữ liệu thật của ${primaryFarmLabel}: lịch chăm sóc, chẩn đoán, chat và thông báo.`
+              : "Tổng quan công việc từ farm được ủy quyền, lịch chăm sóc, trao đổi kỹ thuật và thông báo mới."}
           </Text>
 
           <View style={styles.connection}>
-            <Wifi color={durianTheme.colors.durianYellow} size={16} />
+            <CheckCircle2 color={durianTheme.colors.durianYellow} size={16} />
             <Text style={styles.connectionText}>
-              Mock workspace • Không kết nối microservice
+              Đồng bộ qua API thật • Kéo xuống để làm mới từng nguồn dữ liệu
             </Text>
           </View>
         </View>
 
         <View style={styles.statRow}>
           <StatCard
-            label={isOwner ? "Khu canh tác" : "Ca đang phụ trách"}
-            value={isOwner ? "04" : "07"}
+            label={isOwner ? "Vườn/khu có dữ liệu" : "Vườn được ủy quyền"}
+            value={String(foundation.farms.length).padStart(2, "0")}
           />
-          <StatCard label="Cảnh báo mở" value="03" warning />
-          <StatCard label="Phác đồ hoạt động" value="05" />
+          <StatCard label="Việc chăm sóc mở" value={String(activitySummary.open).padStart(2, "0")} />
+          <StatCard label="Quá hạn" value={String(activitySummary.overdue).padStart(2, "0")} warning />
         </View>
 
+        <View style={styles.statRow}>
+          <StatCard label="Kế hoạch active" value={String(activePlanCount).padStart(2, "0")} />
+          <StatCard label="Chẩn đoán gần đây" value={String(data.diagnoses.length).padStart(2, "0")} />
+          <StatCard label="Thông báo chưa đọc" value={formatNullableCount(data.notificationCount)} />
+        </View>
+
+        <SectionError
+          message={firstError([
+            errors.authorizedFarms,
+            errors.plans,
+            errors.activities,
+            errors.diagnoses,
+            errors.iotDevices,
+            errors.notificationCount,
+            errors.notifications,
+            errors.chatConversations,
+          ])}
+        />
+
+        <Text style={styles.sectionTitle}>Ngữ cảnh vườn</Text>
+        <SummaryCard
+          icon={ShieldCheck}
+          title={primaryFarmLabel}
+          body={`${foundation.zoneCount} khu/plot từ authorized scope, kế hoạch hoặc hoạt động canh tác. ${data.plans.length} kế hoạch đã được tải.`}
+          meta={errors.authorizedFarms ? "Nguồn farm authorization đang lỗi, vẫn hiển thị dữ liệu canh tác nếu có." : "Farm/zone lấy từ API thật."}
+        />
+
         <Text style={styles.sectionTitle}>Công việc ưu tiên</Text>
+        {activitySummary.upcoming.length > 0 ? (
+          activitySummary.upcoming.map((activity) => (
+            <SummaryCard
+              body={`${activityLabel(activity.status)} • ${formatDateTime(activity.scheduledStartAt)} • Farm ${shortFoundationId(activity.farmId)}`}
+              icon={CalendarDays}
+              key={activity.id}
+              meta={`Plot ${shortFoundationId(activity.plotId)}`}
+              title={activity.title}
+            />
+          ))
+        ) : (
+          <SummaryCard
+            body={
+              errors.activities
+                ? "Không thể tải lịch chăm sóc lúc này."
+                : "Chưa có công việc mở hoặc quá hạn trong dữ liệu hiện tại."
+            }
+            icon={CalendarDays}
+            title="Lịch chăm sóc"
+            meta="Không dùng công việc mẫu."
+          />
+        )}
 
         <ActionCard
-          description="Đọc cẩm nang VietGAP, bệnh lá và dinh dưỡng dành cho vườn sầu riêng."
+          description="Mở lịch chăm sóc để tạo, cập nhật trạng thái và ghi nhận công việc bằng API cultivation."
+          icon={CalendarDays}
+          label="Mở lịch canh tác"
+          onPress={() => navigation.push("/(main)/calendar")}
+        />
+
+        <Text style={styles.sectionTitle}>Chẩn đoán & cảnh báo</Text>
+        <SummaryCard
+          body={
+            latestDiagnosis
+              ? `${latestDiagnosis.diseaseName} • ${latestDiagnosis.confidenceText ?? `${Math.round(latestDiagnosis.confidence * 100)}%`} • ${formatDateTime(latestDiagnosis.createdAt)}`
+              : errors.diagnoses
+                ? "Không thể tải lịch sử AI Diagnosis lúc này."
+                : "Chưa có chẩn đoán gần đây từ backend."
+          }
+          icon={Stethoscope}
+          meta="Nguồn: /api/v1/predict/history"
+          title={latestDiagnosis ? "Chẩn đoán AI mới nhất" : "AI Diagnosis"}
+        />
+        <SummaryCard
+          body={
+            latestNotification
+              ? `${latestNotification.title}: ${latestNotification.message}`
+              : errors.notifications
+                ? "Không thể tải danh sách thông báo lúc này."
+                : "Chưa có thông báo mới."
+          }
+          icon={BellRing}
+          meta={
+            data.notificationCount === null
+              ? "Số chưa đọc không khả dụng."
+              : `${data.notificationCount} thông báo chưa đọc`
+          }
+          title="Thông báo"
+        />
+
+        <Text style={styles.sectionTitle}>Chat & cộng tác</Text>
+        <SummaryCard
+          body={
+            chatSupported
+              ? `${data.chatConversations.length} cuộc trò chuyện, ${unreadChatCount} tin chưa đọc từ backend chat.`
+              : "Role hiện tại không nằm trong contract Chat farmer/engineer."
+          }
+          icon={MessageCircle}
+          meta={errors.chatConversations ? "Không thể tải chat lúc này." : "Nguồn: /api/chat/conversations"}
+          title="Chat kỹ thuật"
+        />
+        <ActionCard
+          description="Trao đổi với nhà vườn/kỹ sư, gửi báo cáo AI và cập nhật phác đồ đã lưu."
+          icon={MessageCircle}
+          label="Mở Chat"
+          onPress={() => navigation.push("/(main)/chat")}
+        />
+        <ActionCard
+          description="Xem feed, bình luận, phản ứng và bài viết cộng đồng bằng API Community."
+          icon={Users}
+          label="Cộng đồng DurianCare"
+          onPress={() => navigation.push("/(main)/community")}
+        />
+
+        <Text style={styles.sectionTitle}>Truy cập nhanh</Text>
+        <ActionCard
+          description="Đọc cẩm nang, danh mục và bài viết đã duyệt từ Knowledge API."
           icon={BookOpen}
           label="Không gian tri thức"
           onPress={() => navigation.push("/(main)/knowledge")}
         />
         <ActionCard
-          description="Trao đổi kinh nghiệm và tình trạng vườn với mạng lưới nhà nông."
-          icon={Users}
-          label="Cộng đồng DurianCare"
-          onPress={() => navigation.push("/(main)/community")}
+          description={
+            isOwner
+              ? "Tìm kỹ sư, gửi lời mời, cập nhật phạm vi và thu hồi quyền theo farm-service."
+              : "Xem lời mời và farm/khu được ủy quyền từ farm-service."
+          }
+          icon={Send}
+          label="Ủy quyền vườn"
+          onPress={() => navigation.push("/(main)/authorization")}
         />
-        {isOwner ? (
-          <>
-            <ActionCard
-              description="Mời kỹ sư tham gia Khu A bằng mã cộng tác nội bộ."
-              icon={Send}
-              label="Gửi lời mời hợp tác"
-              onPress={inviteEngineer}
-            />
 
-            <ActionCard
-              description="Xem yêu cầu đăng ký, phê duyệt và thu hồi quyền can thiệp."
-              icon={ShieldCheck}
-              label="Quản lý ủy quyền kỹ sư"
-              onPress={() => navigation.push("/(main)/authorization")}
-            />
-
-            <ActionCard
-              description="Theo dõi nhiệt độ và độ ẩm đất theo từng mốc giờ."
-              icon={FileChartColumn}
-              label="Mở báo cáo cảm biến IoT"
-              onPress={() => navigation.push("/(main)/sensors")}
-            />
-
-            <ActionCard
-              description="Lên lịch rải phân, xịt thuốc, liều lượng và ghi chú thực địa."
-              icon={CalendarDays}
-              label="Mở lịch canh tác"
-              onPress={() => navigation.push("/(main)/calendar")}
-            />
-          </>
-        ) : (
-          <>
-            <ActionCard
-              description="Ca Cháy lá tại Khu A cần phác đồ trước 16:00 hôm nay."
-              icon={Stethoscope}
-              label="Lên phác đồ điều trị"
-              onPress={() => navigation.push("/(main)/chat")}
-            />
-
-            <ActionCard
-              description="Ba ảnh mới từ Chủ vườn Nguyễn Minh đang chờ đánh giá."
-              icon={MessageCircle}
-              label="Trao đổi với chủ vườn"
-              onPress={() => navigation.push("/(main)/chat")}
-            />
-
-            <ActionCard
-              description="Kiểm tra lại tiến độ Ngày 2 của phác đồ Đốm rong."
-              icon={CheckCircle2}
-              label="Theo dõi thực địa"
-              onPress={() => showStatusAction("Đã đánh dấu lịch kiểm tra thực địa.")}
-            />
-
-            <ActionCard
-              description="Tạo lịch canh tác và cập nhật trạng thái công việc cho nhà vườn."
-              icon={CalendarDays}
-              label="Mở lịch canh tác"
-              onPress={() => navigation.push("/(main)/calendar")}
-            />
-          </>
-        )}
-
-        {isOwner ? (
-          <>
-            <Text style={styles.sectionTitle}>Báo cáo cảm biến IoT</Text>
-
-            <View style={styles.sensorGrid}>
-              <SensorCard
-                label="Nhiệt độ"
-                value="29.4°C"
-                icon={ThermometerSun}
-              />
-              <SensorCard
-                label="Độ ẩm đất"
-                value="63%"
-                icon={FileChartColumn}
-                warning
-              />
-              <SensorCard label="Thiết bị online" value="8/9" icon={Wifi} />
-            </View>
-
-            <Text style={styles.sectionTitle}>Quyền kỹ sư thực địa</Text>
-
-            {engineers.map((engineer) => (
-              <View key={engineer.id} style={styles.engineerCard}>
-                <View style={styles.engineerAvatar}>
-                  <Users color={durianTheme.colors.moss} size={20} />
-                </View>
-
-                <View style={styles.engineerCopy}>
-                  <Text style={styles.engineerName}>{engineer.name}</Text>
-                  <Text style={styles.engineerStatus}>
-                    {engineer.status === "APPROVED"
-                      ? "Đã được cấp quyền quản lý"
-                      : "Đang chờ phê duyệt"}
-                  </Text>
-                </View>
-
-                {engineer.status === "PENDING" ? (
-                  <Pressable
-                    onPress={() => approveEngineer(engineer.id)}
-                    style={styles.approveButton}
-                  >
-                    <ShieldCheck
-                      color={durianTheme.colors.mossDark}
-                      size={18}
-                    />
-                  </Pressable>
-                ) : (
-                  <Pressable
-                    onPress={() => revokeEngineer(engineer.id)}
-                    style={styles.revokeButton}
-                  >
-                    <ShieldX color={durianTheme.colors.danger} size={18} />
-                  </Pressable>
-                )}
-              </View>
-            ))}
-          </>
-        ) : null}
-
-        <View style={styles.alertCard}>
-          <BellRing color={durianTheme.colors.danger} size={22} />
-          <View style={styles.alertCopy}>
-            <Text style={styles.alertTitle}>Cảnh báo mới tại Khu A</Text>
-            <Text style={styles.alertText}>
-              AI ghi nhận dấu hiệu Cháy lá với độ tin cậy 91%.
-            </Text>
-          </View>
-        </View>
+        <Text style={styles.sectionTitle}>IoT telemetry</Text>
+        <IotSummary devices={data.iotDevices} error={errors.iotDevices} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function SensorCard({
-  icon: Icon,
-  label,
-  value,
-  warning = false,
-}: {
-  icon: typeof Wifi;
-  label: string;
-  value: string;
-  warning?: boolean;
-}) {
+function settledValue<T>(result: PromiseSettledResult<T>, fallback: T) {
+  return result.status === "fulfilled" ? result.value : fallback;
+}
+
+function settledError<T>(result: PromiseSettledResult<T>) {
+  if (result.status === "fulfilled") return null;
+  return result.reason instanceof Error ? result.reason.message : "Không thể tải dữ liệu.";
+}
+
+function summarizeActivities(activities: CultivationActivity[]) {
+  const todayKey = dateKey(new Date());
+  const upcoming = activities
+    .filter((activity) => !CLOSED_ACTIVITY_STATUSES.has(activity.status))
+    .sort((left, right) => dateTime(left.scheduledStartAt) - dateTime(right.scheduledStartAt))
+    .slice(0, 3);
+  return {
+    open: activities.filter((activity) => !CLOSED_ACTIVITY_STATUSES.has(activity.status)).length,
+    overdue: activities.filter((activity) => activity.status === "OVERDUE").length,
+    today: activities.filter((activity) => dateKey(activity.scheduledStartAt) === todayKey).length,
+    upcoming,
+  };
+}
+
+function dateTime(value: string) {
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function dateKey(value: string | Date) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Chưa có thời gian";
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatNullableCount(value: number | null) {
+  return value === null ? "--" : String(value).padStart(2, "0");
+}
+
+function firstError(messages: Array<string | null>) {
+  return messages.find(Boolean) ?? null;
+}
+
+function activityLabel(status: ActivityStatus) {
+  const labels: Record<ActivityStatus, string> = {
+    APPROVED: "Đã duyệt",
+    CANCELLED: "Đã hủy",
+    COMPLETED: "Hoàn thành",
+    DRAFT: "Nháp",
+    IN_PROGRESS: "Đang làm",
+    OVERDUE: "Quá hạn",
+    PENDING_APPROVAL: "Chờ duyệt",
+    SCHEDULED: "Đã lên lịch",
+    SKIPPED: "Đã hoãn",
+  };
+  return labels[status] ?? status;
+}
+
+function SectionError({ message }: { message: string | null }) {
+  if (!message) return null;
   return (
-    <View style={styles.sensorCard}>
-      <Icon
-        color={warning ? durianTheme.colors.warning : durianTheme.colors.moss}
-        size={20}
-      />
-      <Text style={styles.sensorValue}>{value}</Text>
-      <Text style={styles.sensorLabel}>{label}</Text>
+    <View style={styles.sectionError}>
+      <AlertCircle color={durianTheme.colors.warning} size={17} />
+      <Text style={styles.sectionErrorText}>
+        Một phần dữ liệu chưa tải được: {message}
+      </Text>
     </View>
   );
+}
+
+function SummaryCard({
+  body,
+  icon: Icon,
+  meta,
+  title,
+}: {
+  body: string;
+  icon: typeof BellRing;
+  meta: string;
+  title: string;
+}) {
+  return (
+    <View style={styles.summaryCard}>
+      <View style={styles.actionIcon}>
+        <Icon color={durianTheme.colors.moss} size={22} />
+      </View>
+      <View style={styles.actionCopy}>
+        <Text style={styles.actionLabel}>{title}</Text>
+        <Text style={styles.actionDescription}>{body}</Text>
+        <Text style={styles.metaText}>{meta}</Text>
+      </View>
+    </View>
+  );
+}
+
+function IotSummary({
+  devices,
+  error,
+}: {
+  devices?: IotDevice[];
+  error: string | null;
+}) {
+  const safeDevices = normalizeListResponse(devices);
+  const device = safeDevices.find((item) => item.latestTelemetry) ?? safeDevices[0];
+  const telemetry = device?.latestTelemetry ?? null;
+  if (error) {
+    return (
+      <View style={styles.unavailableCard}>
+        <WifiOff color={durianTheme.colors.warning} size={22} />
+        <View style={styles.alertCopy}>
+          <Text style={styles.unavailableTitle}>Không thể tải IoT</Text>
+          <Text style={styles.alertText}>{error}</Text>
+        </View>
+      </View>
+    );
+  }
+  if (!device) {
+    return (
+      <View style={styles.unavailableCard}>
+        <WifiOff color={durianTheme.colors.muted} size={22} />
+        <View style={styles.alertCopy}>
+          <Text style={styles.unavailableTitle}>Chưa có device registry</Text>
+          <Text style={styles.alertText}>
+            API đọc telemetry đã có, nhưng chưa có thiết bị nào được gắn farm/khu trong registry mà tài khoản này được quyền xem.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+  return (
+    <SummaryCard
+      body={
+        telemetry
+          ? `Nhiệt độ ${formatTelemetryMetric(telemetry.temperature, "°C")} • Độ ẩm ${formatTelemetryMetric(telemetry.humidity, "%")} • Ánh sáng ${formatTelemetryMetric(telemetry.light, "raw")}`
+          : "Thiết bị đã được phân quyền nhưng chưa có telemetry."
+      }
+      icon={WifiOff}
+      meta={`Thiết bị ${device.name} • ${telemetry?.receivedAt ? formatDateTime(telemetry.receivedAt) : "chưa ghi nhận"}`}
+      title="Telemetry mới nhất"
+    />
+  );
+}
+
+function formatTelemetryMetric(value: number | null, unit: string) {
+  if (value === null) return "--";
+  return `${Number.isInteger(value) ? value : value.toFixed(1)} ${unit}`;
+}
+
+function normalizeListResponse<T>(value: T[] | null | undefined) {
+  return Array.isArray(value) ? value : [];
 }
 
 type ActionCardProps = {
@@ -337,54 +597,33 @@ const styles = StyleSheet.create({
   actionCard: {
     alignItems: "center",
     backgroundColor: durianTheme.colors.surface,
+    borderColor: durianTheme.colors.border,
     borderRadius: durianTheme.radius.md,
+    borderWidth: 1,
     flexDirection: "row",
     gap: 13,
     padding: 16,
+    ...durianTheme.shadow.card,
   },
   actionCopy: { flex: 1, gap: 4 },
   actionDescription: {
     color: durianTheme.colors.muted,
-    fontSize: 12,
-    lineHeight: 18,
+    ...durianTheme.typography.caption,
   },
   actionIcon: {
     alignItems: "center",
-    backgroundColor: durianTheme.colors.mossSoft,
-    borderRadius: 14,
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderRadius: durianTheme.radius.sm,
     height: 48,
     justifyContent: "center",
     width: 48,
   },
   actionLabel: {
     color: durianTheme.colors.ink,
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  alertCard: {
-    alignItems: "center",
-    backgroundColor: "#FBE9E5",
-    borderRadius: durianTheme.radius.md,
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 6,
-    padding: 16,
+    ...durianTheme.typography.bodyStrong,
   },
   alertCopy: { flex: 1, gap: 3 },
-  alertText: { color: durianTheme.colors.muted, fontSize: 12, lineHeight: 18 },
-  alertTitle: {
-    color: durianTheme.colors.danger,
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  approveButton: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.durianYellow,
-    borderRadius: 14,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
+  alertText: { color: durianTheme.colors.muted, ...durianTheme.typography.caption },
   connection: {
     alignItems: "center",
     flexDirection: "row",
@@ -392,103 +631,77 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   connectionText: {
-    color: durianTheme.colors.mist,
-    fontSize: 11,
-    fontWeight: "700",
+    color: durianTheme.colors.muted,
+    flex: 1,
+    ...durianTheme.typography.label,
   },
-  content: { gap: 13, padding: 20, paddingBottom: 42 },
-  engineerAvatar: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.mossSoft,
-    borderRadius: 14,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  engineerCard: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.surface,
-    borderRadius: durianTheme.radius.md,
-    flexDirection: "row",
-    gap: 11,
-    padding: 14,
-  },
-  engineerCopy: { flex: 1, gap: 3 },
-  engineerName: {
-    color: durianTheme.colors.ink,
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  engineerStatus: { color: durianTheme.colors.muted, fontSize: 11 },
+  content: { gap: durianTheme.spacing.lg, padding: durianTheme.spacing.xl, paddingBottom: 42 },
   greeting: {
-    color: durianTheme.colors.white,
-    fontSize: 25,
-    fontWeight: "900",
-    letterSpacing: -0.5,
+    color: durianTheme.colors.ink,
+    ...durianTheme.typography.display,
   },
   hero: {
-    backgroundColor: durianTheme.colors.moss,
+    backgroundColor: durianTheme.colors.surface,
+    borderColor: durianTheme.colors.border,
     borderRadius: durianTheme.radius.lg,
+    borderWidth: 1,
     gap: 9,
     padding: 22,
   },
-  heroCopy: { color: durianTheme.colors.mist, fontSize: 14, lineHeight: 21 },
+  heroActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 14,
+  },
+  heroCopy: { color: durianTheme.colors.muted, ...durianTheme.typography.body },
   heroTop: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
   },
+  metaText: {
+    color: durianTheme.colors.moss,
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 16,
+  },
   pressed: { opacity: 0.75, transform: [{ scale: 0.99 }] },
   roleBadge: {
-    backgroundColor: durianTheme.colors.durianYellow,
+    backgroundColor: durianTheme.colors.mossSoft,
     borderRadius: durianTheme.radius.pill,
     paddingHorizontal: 11,
     paddingVertical: 6,
   },
   roleBadgeText: {
     color: durianTheme.colors.mossDark,
-    fontSize: 10,
-    fontWeight: "900",
+    ...durianTheme.typography.label,
     letterSpacing: 1,
   },
-  revokeButton: {
-    alignItems: "center",
-    backgroundColor: "#FBE9E5",
-    borderRadius: 14,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
   safeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 },
-  sensorCard: {
+  sectionError: {
     alignItems: "center",
-    backgroundColor: durianTheme.colors.surface,
-    borderRadius: 16,
-    flex: 1,
-    gap: 4,
-    padding: 13,
+    backgroundColor: durianTheme.colors.warningSoft,
+    borderRadius: durianTheme.radius.md,
+    flexDirection: "row",
+    gap: 8,
+    padding: 12,
   },
-  sensorGrid: { flexDirection: "row", gap: 9 },
-  sensorLabel: {
-    color: durianTheme.colors.muted,
-    fontSize: 9,
-    textAlign: "center",
-  },
-  sensorValue: {
+  sectionErrorText: {
     color: durianTheme.colors.ink,
-    fontSize: 16,
-    fontWeight: "900",
+    flex: 1,
+    ...durianTheme.typography.caption,
   },
   sectionTitle: {
     color: durianTheme.colors.ink,
-    fontSize: 19,
-    fontWeight: "900",
+    ...durianTheme.typography.section,
     marginTop: 7,
   },
   statCard: {
     alignItems: "center",
     backgroundColor: durianTheme.colors.surface,
-    borderRadius: 16,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
+    borderWidth: 1,
     flex: 1,
     gap: 3,
     justifyContent: "center",
@@ -497,15 +710,38 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     color: durianTheme.colors.muted,
-    fontSize: 10,
-    lineHeight: 14,
+    ...durianTheme.typography.label,
     textAlign: "center",
   },
-  statRow: { flexDirection: "row", gap: 9 },
+  statRow: { flexDirection: "row", gap: durianTheme.spacing.sm },
   statValue: {
     color: durianTheme.colors.moss,
-    fontSize: 23,
-    fontWeight: "900",
+    ...durianTheme.typography.title,
+  },
+  summaryCard: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.surface,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 13,
+    padding: 16,
+    ...durianTheme.shadow.card,
+  },
+  unavailableCard: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.surface,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    padding: 16,
+  },
+  unavailableTitle: {
+    color: durianTheme.colors.ink,
+    ...durianTheme.typography.bodyStrong,
   },
   warningValue: { color: durianTheme.colors.danger },
 });

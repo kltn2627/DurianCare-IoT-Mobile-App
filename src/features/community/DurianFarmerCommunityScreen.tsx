@@ -1,386 +1,362 @@
-import { Check, MessageCircle, RefreshCw, Search, Send, UserRound, UserX, X } from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
+import { Flag, ImagePlus, RefreshCw, Search, Send, UsersRound, X } from "lucide-react-native";
+import type { ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
+import { chatApi } from "@/src/features/chat/chatApi";
+import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
+import { useSession } from "@/src/session/SessionContext";
 import { durianTheme } from "@/src/theme/durianTheme";
+
+import { CommunityPostCard } from "./CommunityPostCard";
+import { communityApi } from "./communityApi";
+import { canModerateCommunity, canWriteCommunity, COMMUNITY_POST_TOPICS, COMMUNITY_STATUS_LABELS, COMMUNITY_TOPICS, COMMUNITY_VISIBILITY_LABELS } from "./communityLabels";
+import type { CommunityPage, CommunityPost, CommunityPostStatus, CommunityPostVisibility, CommunityReactionType, CommunityUploadFile } from "./communityTypes";
 import { connectionApi, type ConnectionUser, type UserConnection } from "./connectionApi";
 
-type TabKey = "COMMUNITY" | "PHONE" | "REQUESTS" | "CONNECTED";
+type TabKey = "FEED" | "CREATE" | "CONNECTIONS" | "PROFILE" | "ADMIN";
 
-const relationText: Record<ConnectionUser["relationStatus"], string> = {
-  NONE: "Chưa kết nối",
-  REQUEST_SENT: "Đã gửi lời mời",
-  REQUEST_RECEIVED: "Chờ bạn phản hồi",
-  CONNECTED: "Đã kết nối",
-  BLOCKED: "Đã chặn",
-};
+const PAGE_SIZE = 10;
+const EMPTY_PAGE: CommunityPage<CommunityPost> = { items: [], page: 0, size: PAGE_SIZE, totalElements: 0, totalPages: 0 };
 
 export function DurianFarmerCommunity() {
-  const [tab, setTab] = useState<TabKey>("COMMUNITY");
+  const navigation = useDurianSafeNavigation();
+  const { session } = useSession();
+  const role = session?.user.backendRole;
+  const [tab, setTab] = useState<TabKey>("FEED");
+  const [topic, setTopic] = useState("Tất cả");
   const [query, setQuery] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [phoneResult, setPhoneResult] = useState<ConnectionUser | null>(null);
-  const [communityUsers, setCommunityUsers] = useState<ConnectionUser[]>([]);
-  const [incoming, setIncoming] = useState<UserConnection[]>([]);
-  const [outgoing, setOutgoing] = useState<UserConnection[]>([]);
-  const [connections, setConnections] = useState<UserConnection[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [feed, setFeed] = useState(EMPTY_PAGE);
+  const [mine, setMine] = useState<CommunityPost[]>([]);
+  const [adminPosts, setAdminPosts] = useState<CommunityPost[]>([]);
+  const [adminStatus, setAdminStatus] = useState<CommunityPostStatus | "">("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const phoneError = useMemo(() => {
-    const value = phoneNumber.trim();
-    if (!value) return "";
-    return /^[0-9+() .-]{8,30}$/.test(value) ? "" : "Số điện thoại chưa đúng định dạng.";
-  }, [phoneNumber]);
+  const [connectionQuery, setConnectionQuery] = useState("");
+  const [communityUsers, setCommunityUsers] = useState<ConnectionUser[]>([]);
+  const [connections, setConnections] = useState<UserConnection[]>([]);
+  const [incoming, setIncoming] = useState<UserConnection[]>([]);
+  const [openingChatId, setOpeningChatId] = useState<string | null>(null);
 
-  const loadAll = useCallback(async () => {
-    setLoading(true);
+  const isAdmin = canModerateCommunity(role);
+  const canCreate = canWriteCommunity(role, session?.user.accountStatus);
+  const activeTopic = topic === "Tất cả" ? "" : topic;
+
+  const loadCommunity = useCallback(async (showRefresh = false) => {
+    if (showRefresh) setRefreshing(true);
+    else setLoading(true);
     setError("");
     try {
-      const [community, incomingRequests, outgoingRequests, connected] = await Promise.all([
-        connectionApi.communityUsers(query),
-        connectionApi.incoming(),
-        connectionApi.outgoing(),
-        connectionApi.connections(),
+      const [feedPage, myPage, adminPage] = await Promise.all([
+        communityApi.feed({ page: 0, query: search, size: PAGE_SIZE, topic: activeTopic }),
+        communityApi.mine(0, 20),
+        isAdmin ? communityApi.adminPosts({ page: 0, query: search, size: 20, status: adminStatus, topic: activeTopic }) : Promise.resolve(null),
       ]);
-      setCommunityUsers(community.items);
-      setIncoming(incomingRequests);
-      setOutgoing(outgoingRequests);
-      setConnections(connected.items);
+      setFeed(feedPage);
+      setMine(myPage.items);
+      if (adminPage) setAdminPosts(adminPage.items);
     } catch (loadError) {
       setError(messageOf(loadError));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [query]);
+  }, [activeTopic, adminStatus, isAdmin, search]);
+
+  const loadConnections = useCallback(async () => {
+    try {
+      const [users, connected, incomingRequests] = await Promise.all([
+        connectionApi.communityUsers(connectionQuery),
+        connectionApi.connections(),
+        connectionApi.incoming(),
+      ]);
+      setCommunityUsers(users.items);
+      setConnections(connected.items);
+      setIncoming(incomingRequests);
+    } catch {
+      // Connections are secondary to the post feed in this phase.
+    }
+  }, [connectionQuery]);
 
   useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+    void loadCommunity();
+    void loadConnections();
+  }, [loadCommunity, loadConnections]);
 
-  async function runAction(id: string, action: () => Promise<unknown>) {
+  const loadMore = useCallback(async () => {
+    if (loading || loadingMore || feed.page + 1 >= feed.totalPages) return;
+    setLoadingMore(true);
+    try {
+      const next = await communityApi.feed({ page: feed.page + 1, query: search, size: PAGE_SIZE, topic: activeTopic });
+      setFeed((current) => ({ ...next, items: [...current.items, ...next.items] }));
+    } catch (loadError) {
+      setError(messageOf(loadError));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [activeTopic, feed.page, feed.totalPages, loading, loadingMore, search]);
+
+  async function runPostAction(id: string, action: () => Promise<CommunityPost | void>) {
     if (actionId) return;
     setActionId(id);
     setError("");
     try {
-      await action();
-      await loadAll();
-      if (phoneResult && phoneNumber.trim()) {
-        setPhoneResult(await connectionApi.searchByPhone(phoneNumber.trim()));
-      }
+      const updated = await action();
+      if (updated) mergePost(updated);
+      else await loadCommunity(true);
     } catch (actionError) {
-      setError(messageOf(actionError));
+      Alert.alert("Không thực hiện được", messageOf(actionError));
     } finally {
       setActionId(null);
     }
   }
 
-  async function searchByPhone() {
-    if (phoneError || !phoneNumber.trim()) return;
-    setLoading(true);
-    setError("");
-    setPhoneResult(null);
+  async function openConnectionChat(connection: UserConnection) {
+    if (openingChatId) return;
+    setOpeningChatId(connection.id);
     try {
-      setPhoneResult(await connectionApi.searchByPhone(phoneNumber.trim()));
-    } catch (searchError) {
-      setError(messageOf(searchError));
+      const { conversation } = await chatApi.createConversation({ peerUserId: connection.user.id });
+      navigation.push(`/(main)/chat?conversationId=${encodeURIComponent(conversation.id)}`);
+    } catch (chatError) {
+      Alert.alert("Không mở được cuộc trò chuyện", messageOf(chatError));
     } finally {
-      setLoading(false);
+      setOpeningChatId(null);
     }
   }
 
+  function mergePost(updated: CommunityPost) {
+    setFeed((current) => ({ ...current, items: current.items.map((item) => item.id === updated.id ? updated : item) }));
+    setMine((current) => current.map((item) => item.id === updated.id ? updated : item));
+    setAdminPosts((current) => current.map((item) => item.id === updated.id ? updated : item));
+  }
+
+  const renderPost = useCallback(({ item }: { item: CommunityPost }) => {
+    const canDelete = item.author.id === session?.user.id || isAdmin;
+    return (
+      <CommunityPostCard
+        canDelete={canDelete}
+        canModerate={isAdmin}
+        onComment={() => navigation.push(`/(main)/community/${item.id}`)}
+        onDelete={() => confirmDelete(item, () => runPostAction(item.id, async () => { await communityApi.delete(item.id); }))}
+        onOpen={() => navigation.push(`/(main)/community/${item.id}`)}
+        onReact={(type) => runPostAction(item.id, () => communityApi.react(item.id, type))}
+        onReport={() => runPostAction(item.id, () => communityApi.report(item.id))}
+        post={item}
+      />
+    );
+  }, [isAdmin, navigation, session?.user.id]);
+
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <DurianScreenHeader
-        eyebrow="KẾT NỐI DURIANCARE"
-        icon={UserRound}
-        title="Cộng đồng"
-        subtitle="Tìm nông hộ hoặc kỹ sư nông nghiệp bằng dữ liệu thật từ DurianCare."
-      />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.tabs}>
-          <TabButton active={tab === "COMMUNITY"} label="Cộng đồng" onPress={() => setTab("COMMUNITY")} />
-          <TabButton active={tab === "PHONE"} label="Tìm SĐT" onPress={() => setTab("PHONE")} />
-          <TabButton active={tab === "REQUESTS"} label={`Lời mời${incoming.length ? ` (${incoming.length})` : ""}`} onPress={() => setTab("REQUESTS")} />
-          <TabButton active={tab === "CONNECTED"} label="Đã kết nối" onPress={() => setTab("CONNECTED")} />
-        </View>
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        {tab === "COMMUNITY" ? (
-          <View style={styles.section}>
-            <View style={styles.searchRow}>
-              <TextInput
-                onChangeText={setQuery}
-                placeholder="Tìm theo tên hoặc khu vực"
-                placeholderTextColor={durianTheme.colors.muted}
-                style={styles.searchInput}
-                value={query}
-              />
-              <IconButton icon={Search} onPress={() => void loadAll()} />
-              <IconButton icon={RefreshCw} onPress={() => void loadAll()} />
-            </View>
-            {loading ? <ActivityIndicator color={durianTheme.colors.moss} /> : null}
-            {!loading && communityUsers.length === 0 ? <EmptyText text="Không có người dùng phù hợp." /> : null}
-            {communityUsers.map((user) => (
-              <UserCard
-                key={user.id}
-                actionId={actionId}
-                onAccept={(connectionId) => runAction(connectionId, () => connectionApi.accept(connectionId))}
-                onConnect={() => runAction(user.id, () => connectionApi.sendRequest(user.id, "COMMUNITY"))}
-                user={user}
-              />
-            ))}
-          </View>
-        ) : null}
-
-        {tab === "PHONE" ? (
-          <View style={styles.section}>
-            <View style={styles.searchRow}>
-              <TextInput
-                keyboardType="phone-pad"
-                onChangeText={setPhoneNumber}
-                placeholder="0901234567"
-                placeholderTextColor={durianTheme.colors.muted}
-                style={styles.searchInput}
-                value={phoneNumber}
-              />
-              <IconButton disabled={!!phoneError || !phoneNumber.trim()} icon={Search} onPress={() => void searchByPhone()} />
-            </View>
-            {phoneError ? <Text style={styles.error}>{phoneError}</Text> : null}
-            {loading ? <ActivityIndicator color={durianTheme.colors.moss} /> : null}
-            {phoneResult ? (
-              <UserCard
-                actionId={actionId}
-                onAccept={(connectionId) => runAction(connectionId, () => connectionApi.accept(connectionId))}
-                onConnect={() => runAction(phoneResult.id, () => connectionApi.sendRequest(phoneResult.id, "PHONE_SEARCH"))}
-                user={phoneResult}
-              />
-            ) : !loading && phoneNumber.trim() && !error ? (
-              <EmptyText text="Không tìm thấy người dùng phù hợp." />
-            ) : null}
-          </View>
-        ) : null}
-
-        {tab === "REQUESTS" ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Lời mời nhận được</Text>
-            {incoming.length === 0 ? <EmptyText text="Chưa có lời mời mới." /> : null}
-            {incoming.map((item) => (
-              <RequestCard key={item.id} connection={item}>
-                <ActionButton icon={Check} label="Chấp nhận" onPress={() => runAction(item.id, () => connectionApi.accept(item.id))} />
-                <ActionButton danger icon={X} label="Từ chối" onPress={() => runAction(item.id, () => connectionApi.reject(item.id))} />
-              </RequestCard>
-            ))}
-            <Text style={styles.sectionTitle}>Lời mời đã gửi</Text>
-            {outgoing.length === 0 ? <EmptyText text="Bạn chưa gửi lời mời nào." /> : null}
-            {outgoing.map((item) => (
-              <RequestCard key={item.id} connection={item}>
-                <ActionButton danger icon={X} label="Hủy" onPress={() => runAction(item.id, () => connectionApi.cancel(item.id))} />
-              </RequestCard>
-            ))}
-          </View>
-        ) : null}
-
-        {tab === "CONNECTED" ? (
-          <View style={styles.section}>
-            {connections.length === 0 ? <EmptyText text="Chưa có kết nối nào." /> : null}
-            {connections.map((item) => (
-              <RequestCard key={item.id} connection={item}>
-                <ActionButton icon={MessageCircle} label="Nhắn tin" onPress={() => undefined} />
-                <ActionButton
-                  danger
-                  icon={UserX}
-                  label="Hủy kết nối"
-                  onPress={() =>
-                    Alert.alert("Hủy kết nối", "Bạn chắc chắn muốn hủy kết nối này?", [
-                      { text: "Không", style: "cancel" },
-                      { text: "Hủy kết nối", style: "destructive", onPress: () => void runAction(item.id, () => connectionApi.disconnect(item.id)) },
-                    ])
-                  }
-                />
-              </RequestCard>
-            ))}
-          </View>
-        ) : null}
-      </ScrollView>
+      <DurianScreenHeader eyebrow="CỘNG ĐỒNG DURIANCARE" icon={UsersRound} title="Cộng đồng" subtitle="Bảng tin, bài viết, bình luận và kết nối đều dùng API thật." />
+      <View style={styles.tabs}>
+        <TabButton active={tab === "FEED"} label="Bảng tin" onPress={() => setTab("FEED")} />
+        <TabButton active={tab === "CREATE"} label="Tạo bài" onPress={() => setTab("CREATE")} />
+        <TabButton active={tab === "PROFILE"} label="Bài của tôi" onPress={() => setTab("PROFILE")} />
+        <TabButton active={tab === "CONNECTIONS"} label="Kết nối" onPress={() => setTab("CONNECTIONS")} />
+        {isAdmin ? <TabButton active={tab === "ADMIN"} label="Quản trị" onPress={() => setTab("ADMIN")} /> : null}
+      </View>
+      {tab === "FEED" ? (
+        <FlatList
+          contentContainerStyle={styles.listContent}
+          data={feed.items}
+          keyExtractor={(item) => item.id}
+          ListEmptyComponent={loading ? <ActivityIndicator color={durianTheme.colors.moss} /> : <EmptyState text={error || "Bảng tin chưa có bài phù hợp."} />}
+          ListFooterComponent={loadingMore ? <ActivityIndicator color={durianTheme.colors.moss} style={styles.loader} /> : null}
+          ListHeaderComponent={<FeedFilters query={query} setQuery={setQuery} setSearch={setSearch} setTopic={setTopic} topic={topic} />}
+          onEndReached={() => void loadMore()}
+          onEndReachedThreshold={0.35}
+          refreshControl={<RefreshControl colors={[durianTheme.colors.moss]} onRefresh={() => void loadCommunity(true)} refreshing={refreshing} tintColor={durianTheme.colors.moss} />}
+          renderItem={renderPost}
+        />
+      ) : null}
+      {tab === "CREATE" ? <CreatePostPanel canCreate={canCreate} onCreated={(post) => { setFeed((current) => ({ ...current, items: [post, ...current.items], totalElements: current.totalElements + 1 })); setMine((current) => [post, ...current]); setTab("FEED"); }} /> : null}
+      {tab === "PROFILE" ? <ProfilePosts posts={mine} renderPost={renderPost} /> : null}
+      {tab === "ADMIN" && isAdmin ? <AdminPosts actionId={actionId} adminStatus={adminStatus} onDelete={(post) => confirmDelete(post, () => runPostAction(post.id, async () => { await communityApi.delete(post.id); }))} onOpen={(post) => navigation.push(`/(main)/community/${post.id}`)} posts={adminPosts} setAdminStatus={setAdminStatus} /> : null}
+      {tab === "CONNECTIONS" ? <ConnectionsPanel actionId={actionId} connections={connections} incoming={incoming} openingChatId={openingChatId} query={connectionQuery} setQuery={setConnectionQuery} users={communityUsers} onOpenChat={(connection) => void openConnectionChat(connection)} onRefresh={() => void loadConnections()} /> : null}
     </SafeAreaView>
   );
 }
 
-function UserCard({
-  user,
-  actionId,
-  onConnect,
-  onAccept,
-}: {
-  user: ConnectionUser;
-  actionId: string | null;
-  onConnect: () => void;
-  onAccept: (connectionId: string) => void;
-}) {
+function FeedFilters({ query, setQuery, setSearch, setTopic, topic }: { query: string; setQuery: (value: string) => void; setSearch: (value: string) => void; setTopic: (value: string) => void; topic: string }) {
   return (
-    <View style={styles.card}>
-      <View style={styles.identityRow}>
-        <View style={styles.avatar}><Text style={styles.avatarText}>{user.fullName.charAt(0).toUpperCase()}</Text></View>
-        <View style={styles.identityCopy}>
-          <Text style={styles.name}>{user.fullName}</Text>
-          <Text style={styles.meta}>{user.role === "ENGINEER" ? "Kỹ sư" : "Nông hộ"} · {user.region || "Chưa cập nhật khu vực"}</Text>
-          {user.phoneNumber ? <Text style={styles.meta}>{user.phoneNumber}</Text> : null}
-        </View>
-      </View>
-      <Text style={styles.badge}>{relationText[user.relationStatus]}</Text>
-      <View style={styles.actions}>
-        {user.relationStatus === "NONE" ? (
-          <ActionButton loading={actionId === user.id} icon={Send} label="Kết nối" onPress={onConnect} />
-        ) : null}
-        {user.relationStatus === "REQUEST_RECEIVED" && user.connectionId ? (
-          <ActionButton loading={actionId === user.connectionId} icon={Check} label="Chấp nhận" onPress={() => onAccept(user.connectionId!)} />
-        ) : null}
-        {user.relationStatus === "CONNECTED" ? <ActionButton icon={MessageCircle} label="Nhắn tin" onPress={() => undefined} /> : null}
-      </View>
+    <View style={styles.filterBlock}>
+      <View style={styles.searchBox}><Search color={durianTheme.colors.moss} size={18} /><TextInput onChangeText={setQuery} onSubmitEditing={() => setSearch(query.trim())} placeholder="Tìm nội dung hoặc tác giả..." placeholderTextColor={durianTheme.colors.muted} style={styles.searchInput} value={query} /><Pressable onPress={() => setSearch(query.trim())} style={styles.searchButton}><Text style={styles.searchButtonText}>Tìm</Text></Pressable></View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topicTabs}>{COMMUNITY_TOPICS.map((item) => <Pressable key={item} onPress={() => setTopic(item)} style={[styles.topicButton, topic === item && styles.topicButtonActive]}><Text style={[styles.topicText, topic === item && styles.topicTextActive]}>{item}</Text></Pressable>)}</ScrollView>
     </View>
   );
 }
 
-function RequestCard({ connection, children }: { connection: UserConnection; children: React.ReactNode }) {
+function CreatePostPanel({ canCreate, onCreated }: { canCreate: boolean; onCreated: (post: CommunityPost) => void }) {
+  const [content, setContent] = useState("");
+  const [topic, setTopic] = useState(COMMUNITY_POST_TOPICS[0]);
+  const [visibility, setVisibility] = useState<CommunityPostVisibility>("PUBLIC");
+  const [media, setMedia] = useState<CommunityUploadFile[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const pickMedia = useCallback(async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Cần quyền thư viện", "Cho phép DurianCare chọn ảnh/video cộng đồng.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ allowsMultipleSelection: true, mediaTypes: ImagePicker.MediaTypeOptions.All, quality: 0.82, selectionLimit: 6 });
+    if (result.canceled) return;
+    const next = result.assets.slice(0, 6 - media.length).map((asset) => ({
+      name: asset.fileName ?? `community-media-${Date.now()}.${asset.type === "video" ? "mp4" : "jpg"}`,
+      type: asset.mimeType ?? (asset.type === "video" ? "video/mp4" : "image/jpeg"),
+      uri: asset.uri,
+    }));
+    setMedia((current) => [...current, ...next].slice(0, 6));
+  }, [media.length]);
+
+  const submit = useCallback(async () => {
+    if (!content.trim()) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const created = await communityApi.create({ content: content.trim(), media, topic, visibility });
+      setContent("");
+      setMedia([]);
+      onCreated(created);
+    } catch (submitError) {
+      setError(messageOf(submitError));
+    } finally {
+      setSubmitting(false);
+    }
+  }, [content, media, onCreated, topic, visibility]);
+
+  if (!canCreate) return <View style={styles.panel}><Text style={styles.emptyText}>Chỉ tài khoản ACTIVE với role Farmer, Engineer hoặc Admin được tạo bài.</Text></View>;
+
   return (
-    <View style={styles.card}>
-      <View style={styles.identityRow}>
-        <View style={styles.avatar}><Text style={styles.avatarText}>{connection.user.fullName.charAt(0).toUpperCase()}</Text></View>
-        <View style={styles.identityCopy}>
-          <Text style={styles.name}>{connection.user.fullName}</Text>
-          <Text style={styles.meta}>{connection.user.role === "ENGINEER" ? "Kỹ sư" : "Nông hộ"}</Text>
-        </View>
-      </View>
-      <View style={styles.actions}>{children}</View>
-    </View>
+    <ScrollView contentContainerStyle={styles.panel}>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      <TextInput multiline onChangeText={setContent} placeholder="Chia sẻ kinh nghiệm, hỏi đáp cùng bà con..." placeholderTextColor={durianTheme.colors.muted} style={styles.postInput} value={content} />
+      <Text style={styles.sectionTitle}>Chủ đề</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topicTabs}>{COMMUNITY_POST_TOPICS.map((item) => <Pressable key={item} onPress={() => setTopic(item)} style={[styles.topicButton, topic === item && styles.topicButtonActive]}><Text style={[styles.topicText, topic === item && styles.topicTextActive]}>{item}</Text></Pressable>)}</ScrollView>
+      <Text style={styles.sectionTitle}>Hiển thị</Text>
+      <View style={styles.visibilityRow}>{(["PUBLIC", "CONNECTIONS"] as CommunityPostVisibility[]).map((item) => <Pressable key={item} onPress={() => setVisibility(item)} style={[styles.visibilityButton, visibility === item && styles.topicButtonActive]}><Text style={[styles.topicText, visibility === item && styles.topicTextActive]}>{COMMUNITY_VISIBILITY_LABELS[item]}</Text></Pressable>)}</View>
+      <Pressable onPress={() => void pickMedia()} style={styles.secondaryButton}><ImagePlus color={durianTheme.colors.moss} size={18} /><Text style={styles.secondaryButtonText}>Thêm ảnh/video ({media.length}/6)</Text></Pressable>
+      {media.length ? <Text style={styles.mediaHint}>{media.map((item) => item.name).join(", ")}</Text> : null}
+      <Pressable disabled={submitting || !content.trim()} onPress={() => void submit()} style={[styles.primaryButton, (submitting || !content.trim()) && styles.disabled]}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Send color={durianTheme.colors.white} size={18} />}<Text style={styles.primaryButtonText}>Đăng bài</Text></Pressable>
+    </ScrollView>
   );
+}
+
+function ProfilePosts({ posts, renderPost }: { posts: CommunityPost[]; renderPost: ({ item }: { item: CommunityPost }) => ReactElement }) {
+  return <FlatList contentContainerStyle={styles.listContent} data={posts} keyExtractor={(item) => item.id} ListEmptyComponent={<EmptyState text="Bạn chưa có bài viết cộng đồng nào." />} renderItem={renderPost} />;
+}
+
+function AdminPosts({ actionId, adminStatus, onDelete, onOpen, posts, setAdminStatus }: { actionId: string | null; adminStatus: CommunityPostStatus | ""; onDelete: (post: CommunityPost) => void; onOpen: (post: CommunityPost) => void; posts: CommunityPost[]; setAdminStatus: (status: CommunityPostStatus | "") => void }) {
+  return (
+    <FlatList
+      contentContainerStyle={styles.listContent}
+      data={posts}
+      keyExtractor={(item) => item.id}
+      ListEmptyComponent={<EmptyState text="Không có bài trong bộ lọc quản trị." />}
+      ListHeaderComponent={<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topicTabs}>{(["", "PUBLISHED", "REPORTED", "HIDDEN"] as Array<CommunityPostStatus | "">).map((status) => <Pressable key={status || "ALL"} onPress={() => setAdminStatus(status)} style={[styles.topicButton, adminStatus === status && styles.topicButtonActive]}><Text style={[styles.topicText, adminStatus === status && styles.topicTextActive]}>{status ? COMMUNITY_STATUS_LABELS[status] : "Tất cả"}</Text></Pressable>)}</ScrollView>}
+      renderItem={({ item }) => <View style={styles.adminRow}><Pressable onPress={() => onOpen(item)} style={styles.adminInfo}><Text style={styles.adminTitle}>{item.content.slice(0, 90)}</Text><Text style={styles.adminMeta}>{item.author.fullName} · {item.topic} · {COMMUNITY_STATUS_LABELS[item.status]}</Text></Pressable><Pressable disabled={actionId === item.id} onPress={() => onDelete(item)} style={styles.adminDelete}><X color={durianTheme.colors.danger} size={18} /></Pressable></View>}
+    />
+  );
+}
+
+function ConnectionsPanel({ actionId, connections, incoming, onOpenChat, openingChatId, onRefresh, query, setQuery, users }: { actionId: string | null; connections: UserConnection[]; incoming: UserConnection[]; onOpenChat: (connection: UserConnection) => void; openingChatId: string | null; onRefresh: () => void; query: string; setQuery: (value: string) => void; users: ConnectionUser[] }) {
+  async function runConnection(id: string, action: () => Promise<unknown>) {
+    try {
+      await action();
+      onRefresh();
+    } catch (error) {
+      Alert.alert("Không thực hiện được", messageOf(error));
+    }
+  }
+  return (
+    <ScrollView contentContainerStyle={styles.panel}>
+      <View style={styles.searchBox}><Search color={durianTheme.colors.moss} size={18} /><TextInput onChangeText={setQuery} placeholder="Tìm người dùng..." style={styles.searchInput} value={query} /><Pressable onPress={onRefresh} style={styles.iconButton}><RefreshCw color={durianTheme.colors.moss} size={17} /></Pressable></View>
+      <Text style={styles.sectionTitle}>Lời mời nhận được</Text>
+      {incoming.length ? incoming.map((item) => <ConnectionRow key={item.id} label="Chấp nhận" loading={actionId === item.id} name={item.user.fullName} onPress={() => void runConnection(item.id, () => connectionApi.accept(item.id))} />) : <Text style={styles.emptyText}>Không có lời mời mới.</Text>}
+      <Text style={styles.sectionTitle}>Gợi ý cộng đồng</Text>
+      {users.map((user) => <ConnectionRow key={user.id} label={user.relationStatus === "NONE" ? "Kết nối" : user.relationStatus === "CONNECTED" ? "Đã kết nối" : "Đang chờ"} loading={false} name={user.fullName} onPress={() => user.relationStatus === "NONE" ? void runConnection(user.id, () => connectionApi.sendRequest(user.id, "COMMUNITY")) : undefined} />)}
+      <Text style={styles.sectionTitle}>Đã kết nối</Text>
+      {connections.length ? connections.map((item) => <ConnectionRow key={item.id} label="Nhắn tin" loading={openingChatId === item.id} name={item.user.fullName} onPress={() => onOpenChat(item)} />) : <Text style={styles.emptyText}>Chưa có kết nối.</Text>}
+    </ScrollView>
+  );
+}
+
+function ConnectionRow({ label, loading, name, onPress }: { label: string; loading: boolean; name: string; onPress: () => void }) {
+  return <View style={styles.connectionRow}><View style={styles.connectionAvatar}><Text style={styles.connectionAvatarText}>{name.charAt(0).toUpperCase()}</Text></View><Text style={styles.connectionName}>{name}</Text><Pressable disabled={loading} onPress={onPress} style={[styles.smallButton, loading && styles.disabled]}>{loading ? <ActivityIndicator color={durianTheme.colors.mossDark} size="small" /> : <Text style={styles.smallButtonText}>{label}</Text>}</Pressable></View>;
 }
 
 function TabButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={[styles.tab, active && styles.tabActive]}>
-      <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
-    </Pressable>
-  );
+  return <Pressable onPress={onPress} style={[styles.tab, active && styles.tabActive]}><Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text></Pressable>;
 }
 
-function IconButton({ disabled, icon: Icon, onPress }: { disabled?: boolean; icon: typeof Search; onPress: () => void }) {
-  return (
-    <Pressable disabled={disabled} onPress={onPress} style={[styles.iconButton, disabled && styles.disabled]}>
-      <Icon color={durianTheme.colors.mossDark} size={18} />
-    </Pressable>
-  );
+function EmptyState({ text }: { text: string }) {
+  return <View style={styles.empty}><Flag color={durianTheme.colors.moss} size={28} /><Text style={styles.emptyText}>{text}</Text></View>;
 }
 
-function ActionButton({
-  danger,
-  icon: Icon,
-  label,
-  loading,
-  onPress,
-}: {
-  danger?: boolean;
-  icon: typeof Send;
-  label: string;
-  loading?: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable onPress={onPress} style={[styles.actionButton, danger && styles.actionDanger]}>
-      {loading ? <ActivityIndicator color={durianTheme.colors.mossDark} size="small" /> : <Icon color={danger ? durianTheme.colors.danger : durianTheme.colors.mossDark} size={16} />}
-      <Text style={[styles.actionButtonText, danger && styles.actionDangerText]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function EmptyText({ text }: { text: string }) {
-  return <Text style={styles.empty}>{text}</Text>;
+function confirmDelete(post: CommunityPost, onConfirm: () => void) {
+  Alert.alert("Ẩn bài viết?", "Backend sẽ chuyển trạng thái bài sang HIDDEN.", [
+    { text: "Hủy", style: "cancel" },
+    { onPress: onConfirm, style: "destructive", text: "Ẩn bài" },
+  ]);
 }
 
 function messageOf(error: unknown) {
-  return error instanceof Error ? error.message : "Không thể tải dữ liệu kết nối.";
+  return error instanceof Error ? error.message : "Không thể xử lý Community.";
 }
 
 const styles = StyleSheet.create({
-  actionButton: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.durianYellow,
-    borderRadius: 12,
-    flexDirection: "row",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  actionButtonText: { color: durianTheme.colors.mossDark, fontSize: 12, fontWeight: "900" },
-  actionDanger: { backgroundColor: "#FDECEC" },
-  actionDangerText: { color: durianTheme.colors.danger },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
-  avatar: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.moss,
-    borderRadius: 22,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  avatarText: { color: durianTheme.colors.durianYellow, fontSize: 18, fontWeight: "900" },
-  badge: {
-    alignSelf: "flex-start",
-    backgroundColor: durianTheme.colors.mossSoft,
-    borderRadius: 999,
-    color: durianTheme.colors.moss,
-    fontSize: 11,
-    fontWeight: "900",
-    marginTop: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  card: { backgroundColor: durianTheme.colors.surface, borderRadius: durianTheme.radius.md, padding: 14 },
-  content: { gap: 14, padding: 18, paddingBottom: 40 },
-  disabled: { opacity: 0.5 },
-  empty: { color: durianTheme.colors.muted, fontSize: 13, fontWeight: "800", paddingVertical: 12, textAlign: "center" },
-  error: { backgroundColor: "#FDECEC", borderRadius: 12, color: durianTheme.colors.danger, fontSize: 12, fontWeight: "800", padding: 12 },
-  iconButton: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.durianYellow,
-    borderRadius: 14,
-    height: 46,
-    justifyContent: "center",
-    width: 46,
-  },
-  identityCopy: { flex: 1, gap: 3 },
-  identityRow: { alignItems: "center", flexDirection: "row", gap: 10 },
-  meta: { color: durianTheme.colors.muted, fontSize: 11, fontWeight: "700" },
-  name: { color: durianTheme.colors.ink, fontSize: 14, fontWeight: "900" },
+  adminDelete: { alignItems: "center", backgroundColor: "#FFF1ED", borderRadius: 12, height: 42, justifyContent: "center", width: 42 },
+  adminInfo: { flex: 1 },
+  adminMeta: { color: durianTheme.colors.muted, fontSize: 11, fontWeight: "800", marginTop: 4 },
+  adminRow: { alignItems: "center", backgroundColor: durianTheme.colors.surface, borderColor: "#E4E1D1", borderRadius: 16, borderWidth: 1, flexDirection: "row", gap: 10, marginHorizontal: 16, padding: 14 },
+  adminTitle: { color: durianTheme.colors.ink, fontSize: 14, fontWeight: "900", lineHeight: 20 },
+  connectionAvatar: { alignItems: "center", backgroundColor: durianTheme.colors.moss, borderRadius: 18, height: 36, justifyContent: "center", width: 36 },
+  connectionAvatarText: { color: durianTheme.colors.durianYellow, fontWeight: "900" },
+  connectionName: { color: durianTheme.colors.ink, flex: 1, fontSize: 14, fontWeight: "900" },
+  connectionRow: { alignItems: "center", backgroundColor: durianTheme.colors.surface, borderRadius: 16, flexDirection: "row", gap: 10, padding: 12 },
+  disabled: { opacity: 0.52 },
+  empty: { alignItems: "center", gap: 8, padding: 26 },
+  emptyText: { color: durianTheme.colors.muted, ...durianTheme.typography.body, textAlign: "center" },
+  error: { backgroundColor: durianTheme.colors.dangerSoft, borderColor: durianTheme.colors.danger, borderRadius: durianTheme.radius.sm, borderWidth: 1, color: durianTheme.colors.danger, ...durianTheme.typography.caption, padding: 12 },
+  filterBlock: { gap: 12, paddingBottom: 2 },
+  iconButton: { alignItems: "center", backgroundColor: durianTheme.colors.mossSoft, borderRadius: 12, height: 36, justifyContent: "center", width: 36 },
+  listContent: { gap: 12, paddingBottom: 34, paddingTop: 12 },
+  loader: { paddingVertical: 16 },
+  mediaHint: { color: durianTheme.colors.muted, fontSize: 12, fontWeight: "700", lineHeight: 18 },
+  panel: { gap: 14, padding: 16, paddingBottom: 38 },
+  postInput: { backgroundColor: durianTheme.colors.surface, borderColor: "#E4E1D1", borderRadius: 18, borderWidth: 1, color: durianTheme.colors.ink, minHeight: 150, padding: 14, textAlignVertical: "top" },
+  primaryButton: { alignItems: "center", backgroundColor: durianTheme.colors.moss, borderRadius: durianTheme.radius.sm, flexDirection: "row", gap: 8, justifyContent: "center", minHeight: durianTheme.control.minHeight },
+  primaryButtonText: { color: durianTheme.colors.white, fontSize: 14, fontWeight: "900" },
   safeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 },
-  searchInput: {
-    backgroundColor: durianTheme.colors.surface,
-    borderRadius: 14,
-    color: durianTheme.colors.ink,
-    flex: 1,
-    fontSize: 13,
-    paddingHorizontal: 12,
-  },
-  searchRow: { flexDirection: "row", gap: 8 },
-  section: { gap: 12 },
-  sectionTitle: { color: durianTheme.colors.ink, fontSize: 15, fontWeight: "900", marginTop: 8 },
-  tab: { alignItems: "center", backgroundColor: durianTheme.colors.surface, borderRadius: 12, flex: 1, minHeight: 42, justifyContent: "center", paddingHorizontal: 6 },
+  searchBox: { alignItems: "center", backgroundColor: durianTheme.colors.surface, borderColor: "#E4E1D1", borderRadius: 18, borderWidth: 1, flexDirection: "row", gap: 10, marginHorizontal: 16, minHeight: 50, paddingHorizontal: 12 },
+  searchButton: { backgroundColor: durianTheme.colors.moss, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  searchButtonText: { color: durianTheme.colors.white, fontSize: 12, fontWeight: "900" },
+  searchInput: { color: durianTheme.colors.ink, flex: 1, fontSize: 14 },
+  secondaryButton: { alignItems: "center", backgroundColor: durianTheme.colors.surface, borderColor: "#DDE6DA", borderRadius: 15, borderWidth: 1, flexDirection: "row", gap: 8, justifyContent: "center", minHeight: 46 },
+  secondaryButtonText: { color: durianTheme.colors.moss, fontSize: 14, fontWeight: "900" },
+  sectionTitle: { color: durianTheme.colors.ink, fontSize: 14, fontWeight: "900", lineHeight: 20 },
+  smallButton: { alignItems: "center", backgroundColor: durianTheme.colors.durianYellow, borderRadius: 12, minHeight: 36, justifyContent: "center", paddingHorizontal: 10 },
+  smallButtonText: { color: durianTheme.colors.mossDark, fontSize: 12, fontWeight: "900" },
+  tab: { alignItems: "center", backgroundColor: durianTheme.colors.surface, borderRadius: 12, justifyContent: "center", minHeight: 38, paddingHorizontal: 10 },
   tabActive: { backgroundColor: durianTheme.colors.moss },
-  tabText: { color: durianTheme.colors.moss, fontSize: 11, fontWeight: "900", textAlign: "center" },
+  tabText: { color: durianTheme.colors.moss, fontSize: 11, fontWeight: "900" },
   tabTextActive: { color: durianTheme.colors.durianYellow },
-  tabs: { flexDirection: "row", gap: 7 },
+  tabs: { flexDirection: "row", flexWrap: "wrap", gap: 7, paddingHorizontal: 16, paddingVertical: 10 },
+  topicButton: { backgroundColor: durianTheme.colors.surface, borderColor: "#E4E1D1", borderRadius: durianTheme.radius.pill, borderWidth: 1, paddingHorizontal: 13, paddingVertical: 9 },
+  topicButtonActive: { backgroundColor: durianTheme.colors.moss, borderColor: durianTheme.colors.moss },
+  topicTabs: { gap: 8, paddingHorizontal: 16 },
+  topicText: { color: durianTheme.colors.moss, fontSize: 12, fontWeight: "900" },
+  topicTextActive: { color: durianTheme.colors.white },
+  visibilityButton: { backgroundColor: durianTheme.colors.surface, borderColor: "#E4E1D1", borderRadius: 14, borderWidth: 1, flex: 1, paddingVertical: 11 },
+  visibilityRow: { flexDirection: "row", gap: 8 },
 });

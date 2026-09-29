@@ -1,10 +1,11 @@
-import { ArrowLeft, CalendarDays, Clock3, ExternalLink, Info, Leaf, RefreshCw, Search } from "lucide-react-native";
+import { ArrowLeft, CalendarDays, Clock3, ExternalLink, Info, Leaf, RefreshCw, Search, Send } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
+import { DurianRemoteImage } from "@/src/components/DurianRemoteImage";
 import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
 import { durianTheme } from "@/src/theme/durianTheme";
 
@@ -55,6 +56,84 @@ function buildFallbackEntry(params: {
   };
 }
 
+function textItems(items?: Array<{ text: string }> | null) {
+  return (items ?? []).map((item) => item.text).filter(Boolean);
+}
+
+function treatmentItems(items?: Array<{ treatmentText: string }> | null) {
+  return (items ?? []).map((item) => item.treatmentText).filter(Boolean);
+}
+
+function buildBackendSections(entry: DiagnosisHistoryEntry) {
+  const recommendation = entry.recommendation;
+  const decisionSupport = entry.decisionSupport;
+  const sections = [
+    {
+      heading: "Tổng quan",
+      items: [recommendation?.diseaseSummary].filter((item): item is string => Boolean(item)),
+    },
+    { heading: "Triệu chứng", items: textItems(recommendation?.symptoms) },
+    { heading: "Nguyên nhân", items: textItems(recommendation?.causes) },
+    { heading: "Phòng ngừa", items: textItems(recommendation?.prevention) },
+    { heading: "Sinh học", items: textItems(recommendation?.biologicalTreatments) },
+    { heading: "Hữu cơ", items: textItems(recommendation?.organicTreatments) },
+    { heading: "Hóa học", items: treatmentItems(recommendation?.chemicalTreatments) },
+    { heading: "Điều kiện thuận lợi", items: [recommendation?.favorableConditions].filter((item): item is string => Boolean(item)) },
+    { heading: "Yêu cầu xuất khẩu", items: (recommendation?.exportConsiderations ?? []).map((item) => item.requirementText).filter(Boolean) },
+    { heading: "Việc cần làm ngay", items: decisionSupport?.immediateActions ?? [] },
+    { heading: "Theo dõi", items: decisionSupport?.monitoringPlan ?? [] },
+    { heading: "Kế hoạch sinh học", items: decisionSupport?.biologicalPlan ?? [] },
+    { heading: "Kế hoạch hữu cơ", items: decisionSupport?.organicPlan ?? [] },
+    { heading: "Kế hoạch hóa học", items: decisionSupport?.chemicalPlan ?? [] },
+    { heading: "Sẵn sàng xuất khẩu", items: decisionSupport?.exportReadiness ?? [] },
+    { heading: "Lưu ý cho nông hộ", items: decisionSupport?.farmerNotes ?? [] },
+  ];
+
+  return sections.filter((section) => section.items.length > 0);
+}
+
+function sourceLabel(value?: DiagnosisHistoryEntry["source"]) {
+  if (value === "IOT_CAMERA") return "Camera IoT";
+  if (value === "WEB") return "Web";
+  if (value === "MOBILE") return "Di động";
+  return "Chưa có";
+}
+
+function buildDiagnosisShareMessage(entry: DiagnosisHistoryEntry, summary: string) {
+  const actions = entry.decisionSupport?.immediateActions?.slice(0, 3) ?? [];
+  const monitoring = entry.decisionSupport?.monitoringPlan?.slice(0, 2) ?? [];
+  const chemical = treatmentItems(entry.recommendation?.chemicalTreatments).slice(0, 2);
+  const imageLine =
+    entry.imageUri && /^https?:\/\//i.test(entry.imageUri)
+      ? [`Ảnh chẩn đoán: ${entry.imageUri}`]
+      : [];
+  const actionLines = actions.length
+    ? ["Việc cần làm ngay:", ...actions.map((item) => `- ${item}`)]
+    : [];
+  const monitoringLines = monitoring.length
+    ? ["Theo dõi:", ...monitoring.map((item) => `- ${item}`)]
+    : [];
+  const treatmentLines = chemical.length
+    ? ["Gợi ý xử lý:", ...chemical.map((item) => `- ${item}`)]
+    : [];
+
+  return [
+    "Nhờ kỹ sư xem giúp báo cáo chẩn đoán AI.",
+    `Bệnh: ${entry.diseaseName}`,
+    `Độ tin cậy: ${entry.confidenceText ?? `${entry.confidence.toFixed(1)}%`}`,
+    `Mã dự đoán: ${entry.predictedDisease ?? entry.diseaseCode}`,
+    entry.severity ? `Mức độ: ${entry.severity}` : null,
+    `Tóm tắt: ${summary}`,
+    ...actionLines,
+    ...monitoringLines,
+    ...treatmentLines,
+    ...imageLine,
+    `Mã báo cáo: ${entry.id}`,
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
+}
+
 export function DurianDiagnosisResultScreen() {
   const navigation = useDurianSafeNavigation();
   const params = useLocalSearchParams<{
@@ -93,6 +172,18 @@ export function DurianDiagnosisResultScreen() {
   }, [fallbackEntry, params.entryId]);
 
   const detail = getDiagnosisDetail(entry?.diseaseCode ?? fallbackEntry?.diseaseCode ?? null);
+  const backendSections = entry ? buildBackendSections(entry) : [];
+  const displaySections = backendSections.length > 0 ? backendSections : detail?.sections ?? [];
+  const displaySummary =
+    entry?.recommendation?.diseaseSummary ??
+    detail?.summary ??
+    "Backend chưa trả phần mô tả cho kết quả này.";
+
+  function shareToEngineer() {
+    if (!entry) return;
+    const shareText = buildDiagnosisShareMessage(entry, displaySummary);
+    navigation.push(`/(main)/chat?shareText=${encodeURIComponent(shareText)}`);
+  }
 
   if (loading) {
     return (
@@ -107,7 +198,7 @@ export function DurianDiagnosisResultScreen() {
     );
   }
 
-  if (!entry || !detail) {
+  if (!entry) {
     return (
       <SafeAreaView edges={["top"]} style={styles.safeArea}>
         <DurianScreenHeader
@@ -159,7 +250,19 @@ export function DurianDiagnosisResultScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroCard}>
-          <Image source={{ uri: entry.imageUri }} resizeMode="cover" style={styles.heroImage} />
+          {entry.imageUri ? (
+            <DurianRemoteImage
+              feature="diagnosis-result-image"
+              uri={entry.imageUri}
+              resizeMode="cover"
+              style={styles.heroImage}
+            />
+          ) : (
+            <View style={[styles.heroImage, styles.noImage]}>
+              <Leaf color={durianTheme.colors.moss} size={32} />
+              <Text style={styles.noImageText}>Backend chưa trả ảnh chẩn đoán.</Text>
+            </View>
+          )}
           <View style={styles.heroCopy}>
             <View style={styles.metaRow}>
               <View style={styles.metaChip}>
@@ -167,11 +270,13 @@ export function DurianDiagnosisResultScreen() {
                 <Text style={styles.metaText}>{formatDateTime(entry.createdAt)}</Text>
               </View>
               <View style={styles.confidenceChip}>
-                <Text style={styles.confidenceText}>{entry.confidence.toFixed(1)}%</Text>
+                <Text style={styles.confidenceText}>{entry.confidenceText ?? `${entry.confidence.toFixed(1)}%`}</Text>
               </View>
             </View>
-            <Text style={styles.resultTitle}>{detail.name}</Text>
-            <Text style={styles.resultSummary}>{detail.summary}</Text>
+            <Text style={styles.resultTitle}>{entry.diseaseName}</Text>
+            <Text style={styles.resultSummary}>{displaySummary}</Text>
+            <Text style={styles.metaLine}>Mã dự đoán: {entry.predictedDisease ?? entry.diseaseCode}</Text>
+            {entry.severity ? <Text style={styles.metaLine}>Mức độ: {entry.severity}</Text> : null}
           </View>
         </View>
 
@@ -183,13 +288,13 @@ export function DurianDiagnosisResultScreen() {
             <View style={styles.referenceCopy}>
               <Text style={styles.referenceTitle}>Tóm tắt từ hệ thống</Text>
               <Text style={styles.referenceSubtitle}>
-                Những phần hiển thị dưới đây được lấy từ catalog chẩn đoán cục bộ của ứng dụng.
+                Ưu tiên recommendation và decision support thật từ backend AI; catalog cục bộ chỉ dùng khi backend không trả phần này.
               </Text>
             </View>
           </View>
 
           <View style={styles.sectionList}>
-            {detail.sections.map((section) => (
+            {displaySections.map((section) => (
               <View key={section.heading} style={styles.sectionCard}>
                 <Text style={styles.sectionHeading}>{section.heading}</Text>
                 {section.items.map((item) => (
@@ -201,9 +306,24 @@ export function DurianDiagnosisResultScreen() {
               </View>
             ))}
           </View>
+          <View style={styles.metaGrid}>
+            <MetaInfo label="Nguồn ảnh" value={sourceLabel(entry.source)} />
+            <MetaInfo label="Phát hiện vùng lá" value={entry.usedDetectionCrop ? "Có crop phát hiện" : "Ảnh toàn khung"} />
+            {entry.deviceId ? <MetaInfo label="Thiết bị IoT" value={entry.deviceId} /> : null}
+            {entry.originalFilename ? <MetaInfo label="Tệp gốc" value={entry.originalFilename} /> : null}
+          </View>
+          {entry.topPredictions?.length ? <View style={styles.sectionCard}><Text style={styles.sectionHeading}>Các dự đoán hàng đầu</Text>{entry.topPredictions.map((prediction) => <View key={prediction.label} style={styles.bulletRow}><View style={styles.bulletDot} /><Text style={styles.bulletText}>{prediction.label} · {prediction.confidence.toFixed(2)}%</Text></View>)}</View> : null}
+          {entry.recommendation?.references?.length ? <View style={styles.sectionCard}><Text style={styles.sectionHeading}>Nguồn tham khảo</Text>{entry.recommendation.references.map((reference, index) => { const label = reference.sourceName || reference.publicationTitle || "Tài liệu tham khảo"; return <Pressable disabled={!reference.url} key={`${label}-${index}`} onPress={() => reference.url ? void Linking.openURL(reference.url) : undefined} style={styles.referenceLink}><ExternalLink color={durianTheme.colors.moss} size={15} /><Text style={styles.referenceLinkText}>{label}</Text></Pressable>; })}</View> : null}
         </View>
 
         <View style={styles.actionRow}>
+          <Pressable
+            onPress={shareToEngineer}
+            style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]}
+          >
+            <Send color={durianTheme.colors.mossDark} size={16} />
+            <Text style={styles.primaryButtonText}>Gửi kỹ sư</Text>
+          </Pressable>
           <Pressable
             onPress={() => navigation.replace("/diagnosis-history")}
             style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
@@ -223,8 +343,12 @@ export function DurianDiagnosisResultScreen() {
   );
 }
 
+function MetaInfo({ label, value }: { label: string; value: string }) {
+  return <View style={styles.metaInfo}><Text style={styles.metaInfoLabel}>{label}</Text><Text style={styles.metaInfoValue}>{value}</Text></View>;
+}
+
 const styles = StyleSheet.create({
-  actionRow: { flexDirection: "row", gap: 10 },
+  actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   backButton: {
     alignItems: "center",
     backgroundColor: durianTheme.colors.durianYellow,
@@ -259,7 +383,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     lineHeight: 21,
   },
-  content: { gap: 14, padding: 18, paddingBottom: 44 },
+  content: { gap: durianTheme.spacing.lg, padding: durianTheme.spacing.xl, paddingBottom: 44 },
   emptyState: {
     alignItems: "center",
     gap: 10,
@@ -280,8 +404,8 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     backgroundColor: durianTheme.colors.surface,
-    borderColor: "#E7E1D1",
-    borderRadius: 24,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
     borderWidth: 1,
     overflow: "hidden",
   },
@@ -311,6 +435,28 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     lineHeight: 14,
   },
+  metaLine: {
+    color: durianTheme.colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
+  metaGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  metaInfo: { backgroundColor: durianTheme.colors.surfaceSecondary, borderRadius: durianTheme.radius.sm, flexGrow: 1, minWidth: "45%", padding: 10 },
+  metaInfoLabel: { color: durianTheme.colors.muted, fontSize: 10, fontWeight: "800" },
+  metaInfoValue: { color: durianTheme.colors.ink, fontSize: 12, fontWeight: "900", marginTop: 3 },
+  noImage: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.mossSoft,
+    gap: 8,
+    justifyContent: "center",
+  },
+  noImageText: {
+    color: durianTheme.colors.moss,
+    fontSize: 12,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
   pressed: { opacity: 0.8, transform: [{ scale: 0.985 }] },
   primaryButton: {
     alignItems: "center",
@@ -330,7 +476,9 @@ const styles = StyleSheet.create({
   },
   referenceCard: {
     backgroundColor: durianTheme.colors.surface,
-    borderRadius: 24,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
+    borderWidth: 1,
     gap: 14,
     padding: 16,
   },
@@ -392,6 +540,18 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 46,
     justifyContent: "center",
+  },
+  referenceLink: { alignItems: "center", flexDirection: "row", gap: 7, paddingVertical: 4 },
+  referenceLinkText: { color: durianTheme.colors.moss, flex: 1, fontSize: 13, fontWeight: "800", lineHeight: 19 },
+  shareButton: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.moss,
+    borderRadius: durianTheme.radius.sm,
+    flexDirection: "row",
+    gap: 8,
+    height: 46,
+    justifyContent: "center",
+    paddingHorizontal: 16,
   },
   secondaryButtonText: {
     color: durianTheme.colors.moss,

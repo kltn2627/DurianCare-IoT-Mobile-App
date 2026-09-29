@@ -1,10 +1,12 @@
 import { CalendarDays, LoaderCircle, Mail, MapPin, PencilLine, Phone, RefreshCcw, Save, ShieldCheck, UserRound } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
+import { KeyboardAwareScrollView } from "@/src/components/KeyboardAwareScrollView";
 import { useSession } from "@/src/session/SessionContext";
+import { DurianRemoteImage } from "@/src/components/DurianRemoteImage";
 import { durianTheme } from "@/src/theme/durianTheme";
 
 import { profileClient, ProfileApiError } from "./profileApi";
@@ -296,7 +298,7 @@ export function ProfileEditScreen() {
         subtitle="Cập nhật thông tin cá nhân, số điện thoại và địa chỉ của bạn."
       />
 
-      <ScrollView
+      <KeyboardAwareScrollView
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
@@ -323,7 +325,7 @@ export function ProfileEditScreen() {
         <View style={styles.heroCard}>
           <View style={styles.avatarWrap}>
             {currentAvatar ? (
-              <Image source={{ uri: currentAvatar }} resizeMode="cover" style={styles.avatarImage} />
+              <DurianRemoteImage feature="profile-avatar" uri={currentAvatar} resizeMode="cover" style={styles.avatarImage} />
             ) : (
               <Text style={styles.avatarFallback}>{currentInitials}</Text>
             )}
@@ -411,7 +413,7 @@ export function ProfileEditScreen() {
           <InfoRow label="Ngày tạo" value={formatDateTime(profile.createdAt)} />
           <InfoRow label="Cập nhật gần nhất" value={formatDateTime(profile.updatedAt)} />
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }
@@ -487,11 +489,11 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     lineHeight: 14,
   },
-  content: { gap: 14, padding: 18, paddingBottom: 44 },
+  content: { gap: durianTheme.spacing.lg, padding: durianTheme.spacing.xl, paddingBottom: 44 },
   disabled: { opacity: 0.45 },
   emptyState: { alignItems: "center", gap: 10, paddingHorizontal: 24, paddingVertical: 30 },
-  emptyText: { color: durianTheme.colors.muted, fontSize: 13, lineHeight: 20, textAlign: "center" },
-  emptyTitle: { color: durianTheme.colors.ink, fontSize: 17, fontWeight: "900", lineHeight: 24 },
+  emptyText: { color: durianTheme.colors.muted, ...durianTheme.typography.body, textAlign: "center" },
+  emptyTitle: { color: durianTheme.colors.ink, ...durianTheme.typography.section },
   errorText: { color: durianTheme.colors.danger, fontSize: 11, lineHeight: 16 },
   fieldBlock: { gap: 8 },
   fieldLabel: {
@@ -504,8 +506,8 @@ const styles = StyleSheet.create({
   formGrid: { gap: 14 },
   genderChip: {
     alignItems: "center",
-    backgroundColor: "#F7F9F4",
-    borderColor: "#D9E3DB",
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderColor: durianTheme.colors.border,
     borderRadius: 999,
     borderWidth: 1,
     minHeight: 40,
@@ -527,11 +529,11 @@ const styles = StyleSheet.create({
   heroCopy: { flex: 1, gap: 7 },
   heroEmail: { color: "#DDE9E1", fontSize: 12, lineHeight: 18 },
   heroName: { color: durianTheme.colors.white, fontSize: 24, fontWeight: "900", lineHeight: 30 },
-  infoLabel: { color: durianTheme.colors.muted, fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
+  infoLabel: { color: durianTheme.colors.muted, flexShrink: 1, fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
   infoRow: {
     alignItems: "center",
-    backgroundColor: "#F8F6EB",
-    borderColor: "#E7E1CF",
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderColor: durianTheme.colors.border,
     borderRadius: 18,
     borderWidth: 1,
     flexDirection: "row",
@@ -540,7 +542,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingHorizontal: 14,
   },
-  infoValue: { color: durianTheme.colors.ink, flex: 1, fontSize: 13, fontWeight: "800", lineHeight: 18, textAlign: "right" },
+  infoValue: { color: durianTheme.colors.ink, flex: 1, flexShrink: 1, fontSize: 13, fontWeight: "800", lineHeight: 18, textAlign: "right" },
   input: {
     color: durianTheme.colors.ink,
     flex: 1,
@@ -615,9 +617,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  toastError: { backgroundColor: "#FFF5F3", borderColor: "#F0C2BA", borderWidth: 1 },
-  toastErrorText: { color: "#A53C2F" },
-  toastSuccess: { backgroundColor: "#EEF7E9", borderColor: "#CDE3C2", borderWidth: 1 },
+  toastError: { backgroundColor: durianTheme.colors.dangerSoft, borderColor: durianTheme.colors.danger, borderWidth: 1 },
+  toastErrorText: { color: durianTheme.colors.danger },
+  toastSuccess: { backgroundColor: durianTheme.colors.successSoft, borderColor: durianTheme.colors.border, borderWidth: 1 },
   toastSuccessText: { color: durianTheme.colors.moss },
   toastText: { flex: 1, fontSize: 12, fontWeight: "800", lineHeight: 17 },
   safeAreaPlaceholder: { flex: 1 },

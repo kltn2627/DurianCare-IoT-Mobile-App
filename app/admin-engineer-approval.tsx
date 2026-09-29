@@ -1,1 +1,1 @@
-export { DurianFarmAuthorizationScreen as default } from "@/src/features/authorization/DurianFarmAuthorizationScreen";
+export { DurianEngineerApprovalScreen as default } from "@/src/features/authorization/DurianEngineerApprovalScreen";

@@ -1,8 +1,9 @@
 import { KeyRound, LogOut, ShieldAlert } from "lucide-react-native";
 import { useState, type ComponentProps } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { KeyboardAwareScrollView } from "@/src/components/KeyboardAwareScrollView";
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
 import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
 import { useSession } from "@/src/session/SessionContext";
@@ -27,7 +28,7 @@ export function ChangePasswordScreen() {
         subtitle="Màn hình này được tạo để parity với Web, nhưng contract backend hiện tại chưa có endpoint đổi mật khẩu."
       />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <KeyboardAwareScrollView contentContainerStyle={styles.content}>
         <View style={styles.noteCard}>
           <ShieldAlert color={durianTheme.colors.danger} size={20} />
           <View style={styles.noteCopy}>
@@ -64,7 +65,7 @@ export function ChangePasswordScreen() {
           <LogOut color={durianTheme.colors.moss} size={16} />
           <Text style={styles.secondaryButtonText}>Đăng xuất và đổi tài khoản</Text>
         </Pressable>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }
@@ -92,7 +93,7 @@ function Field({
 }
 
 const styles = StyleSheet.create({
-  content: { gap: 14, padding: 18, paddingBottom: 42 },
+  content: { gap: durianTheme.spacing.lg, padding: durianTheme.spacing.xl, paddingBottom: 42 },
   disabled: { opacity: 0.5 },
   errorText: { color: durianTheme.colors.danger, fontSize: 11, lineHeight: 16 },
   fieldBlock: { gap: 8 },
@@ -105,8 +106,8 @@ const styles = StyleSheet.create({
   },
   input: {
     backgroundColor: durianTheme.colors.surface,
-    borderColor: "#E3DDC5",
-    borderRadius: 18,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.sm,
     borderWidth: 1,
     color: durianTheme.colors.ink,
     fontSize: 14,
@@ -117,9 +118,9 @@ const styles = StyleSheet.create({
   inputError: { borderColor: durianTheme.colors.danger },
   noteCard: {
     alignItems: "flex-start",
-    backgroundColor: "#FFF5F3",
-    borderColor: "#F0C2BA",
-    borderRadius: 20,
+    backgroundColor: durianTheme.colors.dangerSoft,
+    borderColor: durianTheme.colors.danger,
+    borderRadius: durianTheme.radius.md,
     borderWidth: 1,
     flexDirection: "row",
     gap: 10,

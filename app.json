@@ -7,11 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "duriancare",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/images/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#2E5A44"
-    },
     "ios": {
       "supportsTablet": true
     },
@@ -52,7 +47,16 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#2E5A44"
+        }
+      ],
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true

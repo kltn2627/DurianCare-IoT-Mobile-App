@@ -605,7 +605,7 @@ const styles = StyleSheet.create({
   },
   pageButton: {
     alignItems: "center",
-    borderColor: "#D8E2DB",
+    borderColor: durianTheme.colors.border,
     borderRadius: durianTheme.radius.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -624,7 +624,7 @@ const styles = StyleSheet.create({
   },
   pageNumber: {
     alignItems: "center",
-    borderColor: "#D8E2DB",
+    borderColor: durianTheme.colors.border,
     borderRadius: durianTheme.radius.md,
     borderWidth: 1,
     height: 44,
@@ -661,7 +661,7 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     alignItems: "center",
-    borderColor: "#D8E2DB",
+    borderColor: durianTheme.colors.border,
     borderRadius: durianTheme.radius.md,
     borderWidth: 1,
     height: 46,
@@ -678,7 +678,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.75, transform: [{ scale: 0.985 }] },
   primaryButton: {
     alignItems: "center",
-    backgroundColor: durianTheme.colors.durianYellow,
+    backgroundColor: durianTheme.colors.moss,
     borderRadius: durianTheme.radius.md,
     flexDirection: "row",
     gap: 8,
@@ -688,15 +688,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   primaryButtonText: {
-    color: durianTheme.colors.mossDark,
+    color: durianTheme.colors.white,
     fontSize: 13,
     fontWeight: "900",
     lineHeight: 18,
   },
   resultCard: {
     backgroundColor: durianTheme.colors.surface,
-    borderColor: "#E7E1D1",
-    borderRadius: 22,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
     borderWidth: 1,
     marginHorizontal: 18,
     marginBottom: 12,
@@ -715,7 +715,7 @@ const styles = StyleSheet.create({
   },
   resultMetaChip: {
     alignItems: "center",
-    borderColor: "#D8E2DB",
+    borderColor: durianTheme.colors.border,
     borderRadius: durianTheme.radius.pill,
     borderWidth: 1,
     flexDirection: "row",
@@ -771,7 +771,7 @@ const styles = StyleSheet.create({
   },
   searchCard: {
     backgroundColor: durianTheme.colors.surface,
-    borderRadius: 24,
+    borderRadius: durianTheme.radius.md,
     gap: 14,
     marginHorizontal: 18,
     padding: 16,
@@ -786,8 +786,8 @@ const styles = StyleSheet.create({
   searchRow: {
     alignItems: "center",
     backgroundColor: durianTheme.colors.canvas,
-    borderColor: "#DCE4DD",
-    borderRadius: 18,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.sm,
     borderWidth: 1,
     flexDirection: "row",
     gap: 10,
@@ -812,8 +812,8 @@ const styles = StyleSheet.create({
   },
   skeletonCard: {
     backgroundColor: durianTheme.colors.surface,
-    borderColor: "#E7E1D1",
-    borderRadius: 22,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
     borderWidth: 1,
     gap: 12,
     marginHorizontal: 18,
@@ -821,19 +821,19 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   skeletonLine: {
-    backgroundColor: "#E3E8E4",
+    backgroundColor: durianTheme.colors.border,
     borderRadius: 999,
     height: 12,
   },
   skeletonPill: {
-    backgroundColor: "#E3E8E4",
+    backgroundColor: durianTheme.colors.border,
     borderRadius: 999,
     height: 18,
     width: 88,
   },
   sortBadge: {
     alignItems: "center",
-    backgroundColor: "#F3F7F2",
+    backgroundColor: durianTheme.colors.surfaceSecondary,
     borderRadius: durianTheme.radius.pill,
     flexDirection: "row",
     gap: 6,
@@ -856,7 +856,7 @@ const styles = StyleSheet.create({
   toggleChip: {
     alignItems: "center",
     backgroundColor: durianTheme.colors.canvas,
-    borderColor: "#DCE4DD",
+    borderColor: durianTheme.colors.border,
     borderRadius: durianTheme.radius.pill,
     borderWidth: 1,
     justifyContent: "center",

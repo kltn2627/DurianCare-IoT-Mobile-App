@@ -28,6 +28,7 @@ import { useSession } from "@/src/session/SessionContext";
 import { durianTheme } from "@/src/theme/durianTheme";
 
 import { notificationClient, NotificationApiError } from "./notificationApi";
+import { resolveNotificationTarget } from "./notificationTargetResolver";
 import type {
   NotificationItem,
   NotificationPageResponse,
@@ -98,7 +99,7 @@ function NotificationCard({
   busy,
 }: {
   item: NotificationItem;
-  onOpenDetail: (id: string) => void;
+  onOpenDetail: (item: NotificationItem) => void;
   onMarkRead: (id: string) => void;
   onDelete: (id: string) => void;
   busy: boolean;
@@ -106,7 +107,7 @@ function NotificationCard({
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={() => onOpenDetail(item.id)}
+      onPress={() => onOpenDetail(item)}
       style={({ pressed }) => [
         styles.card,
         item.isRead ? styles.cardRead : styles.cardUnread,
@@ -364,14 +365,21 @@ export function DurianNotificationInboxScreen() {
     [refresh, userId],
   );
 
-  const openNotificationDetail = useCallback(
-    (id: string) => {
+  const openNotificationTarget = useCallback(
+    (notification: NotificationItem) => {
+      if (userId && !notification.isRead) {
+        void notificationClient
+          .markRead(userId, notification.id)
+          .then(refresh)
+          .catch(() => undefined);
+      }
+      const target = resolveNotificationTarget(notification);
       navigation.push({
-        pathname: "/notification-detail" as never,
-        params: { id },
+        pathname: target.pathname as never,
+        params: target.params,
       });
     },
-    [navigation],
+    [navigation, refresh, userId],
   );
 
   return (
@@ -559,12 +567,12 @@ export function DurianNotificationInboxScreen() {
             <NotificationCard
               busy={busyId === item.id}
               item={item}
-              onOpenDetail={openNotificationDetail}
+              onOpenDetail={openNotificationTarget}
               onDelete={removeNotification}
               onMarkRead={markRead}
             />
           ),
-          [busyId, markRead, openNotificationDetail, removeNotification],
+          [busyId, markRead, openNotificationTarget, removeNotification],
         )}
         showsVerticalScrollIndicator={false}
       />
@@ -579,10 +587,12 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     marginTop: 4,
   },
-  alertChip: { backgroundColor: "#FDE8E6", borderColor: "#F3BBB4" },
-  aiChip: { backgroundColor: "#E8F2EC", borderColor: "#D1E2D7" },
+  alertChip: { backgroundColor: durianTheme.colors.dangerSoft, borderColor: durianTheme.colors.danger },
+  aiChip: { backgroundColor: durianTheme.colors.successSoft, borderColor: durianTheme.colors.border },
   card: {
-    borderRadius: 22,
+    backgroundColor: durianTheme.colors.surface,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
     borderWidth: 1,
     gap: 14,
     marginHorizontal: 18,
@@ -610,16 +620,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
   },
-  cardRead: {
-    backgroundColor: durianTheme.colors.surface,
-    borderColor: "#E7E1D1",
-  },
+  cardRead: { backgroundColor: durianTheme.colors.surface, borderColor: durianTheme.colors.border },
   cardTitle: {
     color: durianTheme.colors.ink,
     flexShrink: 1,
-    fontSize: 15,
-    fontWeight: "900",
-    lineHeight: 21,
+    ...durianTheme.typography.bodyStrong,
   },
   cardTopRow: {
     alignItems: "flex-start",
@@ -627,8 +632,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cardUnread: {
-    backgroundColor: "#F8FBF8",
-    borderColor: "#DDE8E0",
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderColor: durianTheme.colors.border,
   },
   chip: {
     alignItems: "center",
@@ -648,8 +653,8 @@ const styles = StyleSheet.create({
   content: { paddingBottom: 42 },
   deleteButton: {
     alignItems: "center",
-    backgroundColor: "#FCE8E5",
-    borderRadius: durianTheme.radius.md,
+    backgroundColor: durianTheme.colors.dangerSoft,
+    borderRadius: durianTheme.radius.sm,
     flexDirection: "row",
     gap: 8,
     minHeight: 44,
@@ -657,9 +662,7 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: {
     color: durianTheme.colors.danger,
-    fontSize: 12,
-    fontWeight: "900",
-    lineHeight: 18,
+    ...durianTheme.typography.label,
   },
   disabled: { opacity: 0.45 },
   emptyState: {
@@ -670,21 +673,18 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: durianTheme.colors.muted,
-    fontSize: 13,
-    lineHeight: 20,
+    ...durianTheme.typography.body,
     textAlign: "center",
   },
   emptyTitle: {
     color: durianTheme.colors.ink,
-    fontSize: 17,
-    fontWeight: "900",
-    lineHeight: 24,
+    ...durianTheme.typography.section,
     textAlign: "center",
   },
   errorBox: {
-    backgroundColor: "#FFF2F0",
-    borderColor: "#F3C8C1",
-    borderRadius: 20,
+    backgroundColor: durianTheme.colors.dangerSoft,
+    borderColor: durianTheme.colors.danger,
+    borderRadius: durianTheme.radius.md,
     borderWidth: 1,
     marginHorizontal: 18,
     padding: 16,
