@@ -16,11 +16,9 @@ type RagAskResponse = {
   status?: string;
 };
 
-// photo param kept for API compatibility but /api/v1/chat/ask is text-only
 export async function askDurianAssistant(
   question: string,
   signal?: AbortSignal,
-  predictedDisease?: string,
 ): Promise<AiAssistantReply> {
   const normalizedQuestion = question.trim();
   if (!normalizedQuestion) {
