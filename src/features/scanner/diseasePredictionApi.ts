@@ -156,6 +156,7 @@ function resolveDisease(code: string, recommendation?: DiseaseRecommendation | n
   if (known) return known;
 
   return {
+    category: "DISEASE",
     code: normalizedCode as DurianDisease["code"],
     name: recommendation?.vietnameseName || normalizedCode,
     note: recommendation?.diseaseSummary || "Backend chưa trả mô tả ngắn cho kết quả này.",

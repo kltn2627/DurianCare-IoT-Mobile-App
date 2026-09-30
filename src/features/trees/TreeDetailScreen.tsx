@@ -167,7 +167,7 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
     try {
       const result = await predictDurianDisease(
         { uri: photo.uri, width: photo.width ?? 0, height: photo.height ?? 0 } as Parameters<typeof predictDurianDisease>[0],
-        ctrl.signal,
+        { externalSignal: ctrl.signal, source: "MOBILE" },
       );
       setPrediction(result);
     } catch (err) {
