@@ -1,4 +1,10 @@
-import type { PredictionBoundingBox } from "@/src/features/scanner/diseasePredictionApi";
+import type {
+  DecisionSupport,
+  DiseaseRecommendation,
+  PredictionBoundingBox,
+  PredictionSource,
+  StoredImageInfo,
+} from "@/src/features/scanner/diseasePredictionApi";
 import type { DurianDisease } from "@/src/features/scanner/diseaseCatalog";
 
 export type DiagnosisDetailSection = {
@@ -24,9 +30,21 @@ export type DiagnosisDetail = DurianDisease & {
 export type DiagnosisHistoryEntry = {
   boundingBox: PredictionBoundingBox;
   confidence: number;
+  confidenceText?: string;
   createdAt: string;
-  diseaseCode: DurianDisease["code"];
+  decisionSupport?: DecisionSupport | null;
+  diseaseCode: DurianDisease["code"] | string;
   diseaseName: string;
   id: string;
+  image?: StoredImageInfo | null;
   imageUri: string;
+  originalFilename?: string | null;
+  predictedDisease?: string;
+  recommendation?: DiseaseRecommendation | null;
+  severity?: string | null;
+  status?: string;
+  source?: PredictionSource;
+  deviceId?: string | null;
+  topPredictions?: Array<{ confidence: number; label: string }>;
+  usedDetectionCrop?: boolean;
 };

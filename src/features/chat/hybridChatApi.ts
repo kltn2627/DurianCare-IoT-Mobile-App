@@ -1,5 +1,9 @@
 import type { CameraCapturedPicture } from "expo-camera";
 
+import { authorizedRequest } from "@/src/features/auth/authApi";
+import { getApiBaseUrl } from "@/src/lib/apiBase";
+
+
 const AI_CHAT_PATH = process.env.EXPO_PUBLIC_AI_CHAT_PATH ?? "/api/v1/chat/ask";
 const EXPERT_MEDIA_PATH =
   process.env.EXPO_PUBLIC_EXPERT_MEDIA_PATH ?? "/api/v1/chat/expert/media";
@@ -9,19 +13,19 @@ type UnknownRecord = Record<string, unknown>;
 
 export type AiAssistantReply = {
   answer: string;
-  references: string[];
+  sources: string[];
+};
+
+type RagAskResponse = {
+  data?: {
+    answer?: string;
+    sources?: unknown[];
+  };
+  status?: string;
 };
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null;
-}
-
-function getApiBaseUrl(): string {
-  const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, "");
-  if (!baseUrl) {
-    throw new Error("Thiếu EXPO_PUBLIC_API_BASE_URL để kết nối dịch vụ tư vấn.");
-  }
-  return baseUrl;
 }
 
 function appendPhoto(formData: FormData, photo: CameraCapturedPicture) {
@@ -117,26 +121,30 @@ function unwrapRecord(payload: unknown): UnknownRecord {
 // photo param kept for API compatibility but /api/v1/chat/ask is text-only
 export async function askDurianAssistant(
   question: string,
-  photo?: CameraCapturedPicture | null,
   signal?: AbortSignal,
   predictedDisease?: string,
 ): Promise<AiAssistantReply> {
-  const body: Record<string, string> = { question };
-  if (predictedDisease) body.predicted_disease = predictedDisease;
+  const normalizedQuestion = question.trim();
+  if (!normalizedQuestion) {
+    throw new Error("Vui lòng nhập câu hỏi trước khi gửi.");
+  }
 
-  const record = unwrapRecord(await postJson(AI_CHAT_PATH, body, signal));
-  const answer =
-    [record.answer, record.message, record.content, record.response].find(
-      (value): value is string => typeof value === "string" && value.trim().length > 0,
-    ) ?? "Trợ lý chưa tạo được câu trả lời phù hợp.";
-  const rawList = Array.isArray(record.sources)
-    ? record.sources
-    : Array.isArray(record.references)
-      ? record.references
-      : [];
-  const references = rawList.filter((value): value is string => typeof value === "string");
+  const response = await authorizedRequest<RagAskResponse>({
+    data: { question: normalizedQuestion },
+    method: "POST",
+    signal,
+    timeout: REQUEST_TIMEOUT_MS,
+    url: AI_CHAT_PATH,
+  });
+  const answer = response.data.data?.answer;
+  if (typeof answer !== "string" || !answer.trim()) {
+    throw new Error("AI Service chưa trả câu trả lời hợp lệ.");
+  }
+  const sources = Array.isArray(response.data.data?.sources)
+    ? response.data.data.sources.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : [];
 
-  return { answer, references };
+  return { answer: answer.trim(), sources };
 }
 
 export async function uploadExpertGardenPhoto(

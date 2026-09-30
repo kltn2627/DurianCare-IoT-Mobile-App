@@ -1,25 +1,25 @@
 import {
   Activity,
-  BatteryMedium,
-  CloudSun,
+  AlertCircle,
+  Bell,
   Droplets,
-  FlaskConical,
   Gauge,
-  Pause,
-  Play,
   RadioTower,
   RefreshCw,
-  Sprout,
+  Save,
+  Settings,
   ThermometerSun,
-  Waves,
+  Trash2,
 } from "lucide-react-native";
-import { type ReactElement, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -27,249 +27,661 @@ import Svg, { Circle, Line, Polyline } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
-import { durianSensorStations } from "@/src/constants/durianMockData";
+import {
+  listAuthorizedFarms,
+  listCultivationActivities,
+  listCultivationPlans,
+  listOwnedFarms,
+} from "@/src/features/cultivation/api/cultivationApi";
+import {
+  buildFoundationFarmOptions,
+  buildFoundationZoneOptions,
+  shortFoundationId,
+} from "@/src/features/cultivation/api/farmFoundation";
+import type {
+  AuthorizedFarm,
+  CareFarmOption,
+  CareZoneOption,
+  CultivationActivity,
+  CultivationPlan,
+  FarmCatalog,
+} from "@/src/features/cultivation/api/cultivationTypes";
 import { durianTheme } from "@/src/theme/durianTheme";
 
-import type { DurianSensorStation, DurianTelemetryReading } from "./types";
-import { useDurianLiveTelemetry } from "./useDurianLiveTelemetry";
+import { iotApi } from "./iotApi";
+import type { IotAlert, IotDevice, IotTelemetryReading, MutableIotDeviceStatus } from "./types";
 
-type DashboardSection = "metrics" | "climate" | "soil" | "nutrients" | "stations";
+const HISTORY_LIMIT = 288;
+const DEVICE_STATUSES: MutableIotDeviceStatus[] = ["ACTIVE", "INACTIVE", "MAINTENANCE"];
 
-type MetricItem = {
-  accent: string;
-  icon: typeof Activity;
-  id: keyof Omit<DurianTelemetryReading, "time">;
-  label: string;
-  range: string;
-  unit: string;
+type MetricKey = "humidity" | "light" | "temperature";
+type FoundationData = {
+  activities: CultivationActivity[];
+  authorizedFarms: AuthorizedFarm[];
+  ownedFarms: FarmCatalog[];
+  plans: CultivationPlan[];
 };
 
-const DASHBOARD_SECTIONS: DashboardSection[] = [
-  "metrics",
-  "climate",
-  "soil",
-  "nutrients",
-  "stations",
-];
-
-const METRICS: MetricItem[] = [
+const METRICS: Array<{
+  accent: string;
+  icon: typeof Activity;
+  key: MetricKey;
+  label: string;
+  unit: string;
+}> = [
   {
     accent: "#FFB866",
     icon: ThermometerSun,
-    id: "airTemperature",
-    label: "Nhiệt độ DHT22",
-    range: "Tối ưu 28 - 32°C",
+    key: "temperature",
+    label: "Nhiệt độ",
     unit: "°C",
   },
   {
     accent: "#8DD6C3",
-    icon: Waves,
-    id: "airHumidity",
+    icon: Droplets,
+    key: "humidity",
     label: "Độ ẩm không khí",
-    range: "Tối ưu 70 - 85%",
     unit: "%",
   },
   {
     accent: durianTheme.colors.durianYellow,
-    icon: Droplets,
-    id: "soilMoisture",
-    label: "Độ ẩm đất",
-    range: "Tối ưu 70 - 85%",
-    unit: "%",
-  },
-  {
-    accent: "#9FD28B",
-    icon: Sprout,
-    id: "nitrogen",
-    label: "Nitrogen (N)",
-    range: "Dinh dưỡng lá",
-    unit: " mg/kg",
-  },
-  {
-    accent: "#C8B5E8",
-    icon: FlaskConical,
-    id: "phosphorus",
-    label: "Phosphorus (P)",
-    range: "Phát triển rễ",
-    unit: " mg/kg",
-  },
-  {
-    accent: "#F3C989",
     icon: Gauge,
-    id: "potassium",
-    label: "Potassium (K)",
-    range: "Chất lượng trái",
-    unit: " mg/kg",
+    key: "light",
+    label: "Ánh sáng",
+    unit: "raw",
   },
 ];
 
-const SENSOR_STATIONS = durianSensorStations as DurianSensorStation[];
-
 export function DurianClimateMonitorScreen() {
   const { width } = useWindowDimensions();
-  const { isLive, lastUpdatedAt, latest, refresh, series, setIsLive } =
-    useDurianLiveTelemetry();
-  const chartWidth = Math.max(280, Math.min(420, width - 68));
+  const [devices, setDevices] = useState<IotDevice[]>([]);
+  const [alerts, setAlerts] = useState<IotAlert[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
+  const [latest, setLatest] = useState<IotTelemetryReading | null>(null);
+  const [history, setHistory] = useState<IotTelemetryReading[]>([]);
+  const [foundation, setFoundation] = useState<FoundationData>({ activities: [], authorizedFarms: [], ownedFarms: [], plans: [] });
+  const [registerDraft, setRegisterDraft] = useState({
+    cultivationAreaId: "",
+    deviceUid: "",
+    farmId: "",
+    name: "",
+  });
+  const [editDraft, setEditDraft] = useState<{
+    cultivationAreaId: string;
+    farmId: string;
+    name: string;
+    status: MutableIotDeviceStatus;
+  }>({
+    cultivationAreaId: "",
+    farmId: "",
+    name: "",
+    status: "ACTIVE",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const chartWidth = Math.max(280, Math.min(420, width - 58));
 
-  const header = useMemo(
-    () => (
-      <View style={styles.headerBlock}>
-        <DurianScreenHeader
-          eyebrow="SMARTFARM IOT · LIVE"
-          icon={Activity}
-          title="Sức khỏe vườn sầu riêng"
-          subtitle="Dữ liệu DHT22, độ ẩm đất và dinh dưỡng NPK được cập nhật theo nhịp trạm cảm biến."
-        />
-        <View style={styles.liveToolbar}>
-          <View style={styles.liveCopy}>
-            <View style={[styles.liveDot, !isLive && styles.liveDotPaused]} />
-            <View>
-              <Text style={styles.liveTitle}>{isLive ? "Đang nhận dữ liệu" : "Đã tạm dừng"}</Text>
-              <Text style={styles.liveMeta}>
-                Cập nhật {lastUpdatedAt.toLocaleTimeString("vi-VN", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                })}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.toolbarActions}>
-            <IconButton
-              icon={RefreshCw}
-              label="Làm mới dữ liệu"
-              onPress={refresh}
-            />
-            <IconButton
-              icon={isLive ? Pause : Play}
-              label={isLive ? "Tạm dừng" : "Tiếp tục"}
-              onPress={() => setIsLive((current) => !current)}
-            />
-          </View>
-        </View>
-      </View>
-    ),
-    [isLive, lastUpdatedAt, refresh, setIsLive],
+  const selectedDevice = useMemo(
+    () => devices.find((device) => device.id === selectedDeviceId) ?? devices[0] ?? null,
+    [devices, selectedDeviceId],
+  );
+  const farms = useMemo(() => buildFoundationFarmOptions(foundation), [foundation]);
+  const selectedRegisterFarmId = registerDraft.farmId || farms[0]?.farmId || "";
+  const registerZones = useMemo(
+    () => buildFoundationZoneOptions(foundation, selectedRegisterFarmId),
+    [foundation, selectedRegisterFarmId],
+  );
+  const editZones = useMemo(
+    () => buildFoundationZoneOptions(foundation, editDraft.farmId),
+    [editDraft.farmId, foundation],
   );
 
-  const renderSection = useCallback(
-    ({ item }: { item: DashboardSection }): ReactElement => {
-      switch (item) {
-        case "metrics":
-          return <MetricCarousel latest={latest} />;
-        case "climate":
-          return <ClimateLineChart chartWidth={chartWidth} series={series} />;
-        case "soil":
-          return <SoilMoistureChart series={series} />;
-        case "nutrients":
-          return <NutrientCard latest={latest} />;
-        case "stations":
-          return <StationCarousel stations={SENSOR_STATIONS} />;
+  const loadFoundation = useCallback(async () => {
+    const [owned, authorized, plans, activities] = await Promise.allSettled([
+      listOwnedFarms(),
+      listAuthorizedFarms(),
+      listCultivationPlans(),
+      listCultivationActivities(),
+    ]);
+    const next = {
+      activities: activities.status === "fulfilled" ? activities.value : [],
+      authorizedFarms: authorized.status === "fulfilled" ? authorized.value : [],
+      ownedFarms: owned.status === "fulfilled" ? owned.value : [],
+      plans: plans.status === "fulfilled" ? plans.value : [],
+    };
+    setFoundation(next);
+    const nextFarms = buildFoundationFarmOptions(next);
+    if (!registerDraft.farmId && nextFarms[0]?.farmId) {
+      setRegisterDraft((current) => ({ ...current, farmId: nextFarms[0].farmId }));
+    }
+  }, [registerDraft.farmId]);
+
+  const loadDevices = useCallback(async () => {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const response = await iotApi.listDevices();
+      const nextDevices = Array.isArray(response.devices) ? response.devices : [];
+      setDevices(nextDevices);
+      const nextDeviceId = nextDevices.some((device) => device.id === selectedDeviceId)
+        ? selectedDeviceId
+        : nextDevices[0]?.id ?? "";
+      setSelectedDeviceId(nextDeviceId);
+      if (!nextDeviceId) {
+        setLatest(null);
+        setHistory([]);
       }
-    },
-    [chartWidth, latest, series],
-  );
+    } catch (loadError) {
+      setError(messageFromError(loadError));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [selectedDeviceId]);
+
+  const loadAlerts = useCallback(async () => {
+    try {
+      const response = await iotApi.listAlerts("ALERTING");
+      setAlerts(response.alerts);
+    } catch {
+      setAlerts([]);
+    }
+  }, []);
+
+  const loadTelemetry = useCallback(async (deviceId: string) => {
+    if (!deviceId) return;
+    setRefreshing(true);
+    setError(null);
+    try {
+      const [latestResponse, historyResponse] = await Promise.all([
+        iotApi.latestTelemetry(deviceId),
+        iotApi.telemetryHistory(deviceId, { limit: HISTORY_LIMIT }),
+      ]);
+      setLatest(latestResponse.telemetry);
+      setHistory(historyResponse.telemetry);
+    } catch (loadError) {
+      setError(messageFromError(loadError));
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  const refresh = useCallback(async () => {
+    await Promise.all([loadDevices(), loadFoundation(), loadAlerts()]);
+    if (selectedDeviceId) await loadTelemetry(selectedDeviceId);
+  }, [loadAlerts, loadDevices, loadFoundation, loadTelemetry, selectedDeviceId]);
+
+  useEffect(() => {
+    void loadDevices();
+  }, [loadDevices]);
+
+  useEffect(() => {
+    void loadFoundation();
+  }, [loadFoundation]);
+
+  useEffect(() => {
+    void loadAlerts();
+  }, [loadAlerts]);
+
+  useEffect(() => {
+    if (selectedDeviceId) {
+      void loadTelemetry(selectedDeviceId);
+    }
+  }, [loadTelemetry, selectedDeviceId]);
+
+  useEffect(() => {
+    if (!selectedDevice) return;
+    setEditDraft({
+      cultivationAreaId: selectedDevice.cultivationAreaId ?? "",
+      farmId: selectedDevice.farmId,
+      name: selectedDevice.name,
+      status: DEVICE_STATUSES.includes(selectedDevice.status as MutableIotDeviceStatus)
+        ? (selectedDevice.status as MutableIotDeviceStatus)
+        : "ACTIVE",
+    });
+  }, [selectedDevice]);
+
+  async function submitRegisterDevice() {
+    const farmId = selectedRegisterFarmId;
+    if (!registerDraft.deviceUid.trim() || !farmId) {
+      setError("Cần nhập UID thiết bị và chọn farm trước khi đăng ký.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const response = await iotApi.registerDevice({
+        cultivationAreaId: registerDraft.cultivationAreaId || null,
+        deviceUid: registerDraft.deviceUid.trim(),
+        farmId,
+        name: registerDraft.name.trim() || null,
+      });
+      setRegisterDraft({ cultivationAreaId: "", deviceUid: "", farmId, name: "" });
+      await loadDevices();
+      setSelectedDeviceId(response.device.id);
+    } catch (registerError) {
+      setError(messageFromError(registerError));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function submitUpdateDevice() {
+    if (!selectedDevice) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const response = await iotApi.updateDevice(selectedDevice.id, {
+        cultivationAreaId: editDraft.cultivationAreaId || null,
+        farmId: editDraft.farmId,
+        name: editDraft.name.trim() || null,
+        status: editDraft.status,
+      });
+      await loadDevices();
+      setSelectedDeviceId(response.device.id);
+    } catch (updateError) {
+      setError(messageFromError(updateError));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function submitDeleteDevice() {
+    if (!selectedDevice) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await iotApi.deleteDevice(selectedDevice.id);
+      await loadDevices();
+      setSelectedDeviceId("");
+      setLatest(null);
+      setHistory([]);
+    } catch (deleteError) {
+      setError(messageFromError(deleteError));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function acknowledgeAlert(alertId: string) {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await iotApi.acknowledgeAlert(alertId);
+      await loadAlerts();
+    } catch (ackError) {
+      setError(messageFromError(ackError));
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <FlatList
+      <ScrollView
         contentContainerStyle={styles.content}
-        data={DASHBOARD_SECTIONS}
-        keyExtractor={(item) => item}
-        ListHeaderComponent={header}
         refreshControl={
           <RefreshControl
             colors={[durianTheme.colors.moss]}
             onRefresh={refresh}
-            refreshing={false}
+            refreshing={refreshing}
             tintColor={durianTheme.colors.moss}
           />
         }
-        renderItem={renderSection}
         showsVerticalScrollIndicator={false}
-      />
+      >
+        <View style={styles.headerBlock}>
+          <DurianScreenHeader
+            eyebrow="SMARTFARM IOT · REAL API"
+            icon={Activity}
+            title="Giám sát cảm biến IoT"
+            subtitle="Đọc danh sách thiết bị, latest telemetry và lịch sử raw qua gateway."
+          />
+          <View style={styles.toolbar}>
+            <View style={styles.toolbarCopy}>
+              <View style={[styles.liveDot, !latest && styles.liveDotMuted]} />
+              <View>
+                <Text style={styles.liveTitle}>
+                  {selectedDevice ? selectedDevice.name : "Chưa có thiết bị"}
+                </Text>
+                <Text style={styles.liveMeta}>
+                  {latest?.receivedAt ? `Cập nhật ${formatDateTime(latest.receivedAt)}` : "Chưa có telemetry"}
+                </Text>
+              </View>
+            </View>
+            <Pressable accessibilityLabel="Làm mới dữ liệu" onPress={refresh} style={styles.iconButton}>
+              <RefreshCw color={durianTheme.colors.moss} size={19} />
+            </Pressable>
+          </View>
+        </View>
+
+        {error ? (
+          <View style={styles.errorCard}>
+            <AlertCircle color={durianTheme.colors.warning} size={20} />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
+
+        {devices.length > 0 ? (
+          <FlatList
+            contentContainerStyle={styles.horizontalList}
+            data={devices}
+            horizontal
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <DeviceChip
+                active={item.id === selectedDevice?.id}
+                device={item}
+                onPress={() => setSelectedDeviceId(item.id)}
+              />
+            )}
+            showsHorizontalScrollIndicator={false}
+          />
+        ) : (
+          <EmptyCard
+            body="Không có device registry nào nằm trong farm/khu bạn được quyền xem. Telemetry raw vẫn có thể tồn tại, nhưng không được expose nếu thiếu mapping farm/area."
+            title="Chưa có thiết bị khả dụng"
+          />
+        )}
+
+        <DeviceManagementCard
+          editDraft={editDraft}
+          editZones={editZones}
+          farms={farms}
+          onChangeEdit={setEditDraft}
+          onChangeRegister={setRegisterDraft}
+          onDelete={submitDeleteDevice}
+          onRegister={submitRegisterDevice}
+          onUpdate={submitUpdateDevice}
+          registerDraft={registerDraft}
+          registerFarmId={selectedRegisterFarmId}
+          registerZones={registerZones}
+          selectedDevice={selectedDevice}
+          submitting={submitting}
+        />
+
+        <AlertListCard alerts={alerts} onAcknowledge={acknowledgeAlert} submitting={submitting} />
+
+        <View style={styles.metricGrid}>
+          {METRICS.map((metric) => (
+            <MetricCard
+              key={metric.key}
+              metric={metric}
+              value={latest ? latest[metric.key] : null}
+            />
+          ))}
+        </View>
+
+        <View style={styles.chartCard}>
+          <SectionHeading
+            caption="Nguồn dữ liệu raw từ /api/iot/devices/{id}/telemetry"
+            title="Lịch sử nhiệt độ & độ ẩm"
+          />
+          {history.length > 1 ? (
+            <>
+              <View style={styles.legendRow}>
+                <Legend color={durianTheme.colors.durianYellow} label="Nhiệt độ" />
+                <Legend color="#72BFA9" label="Độ ẩm" />
+              </View>
+              <TelemetryLineChart chartWidth={chartWidth} series={history} />
+            </>
+          ) : (
+            <Text style={styles.emptyText}>
+              Chưa đủ dữ liệu lịch sử để vẽ chart. Mobile không dùng sample chart.
+            </Text>
+          )}
+        </View>
+
+        {selectedDevice ? (
+          <View style={styles.chartCard}>
+            <SectionHeading caption="Registry + latest reading" title="Trạng thái thiết bị" />
+            <DeviceDetail device={selectedDevice} latest={latest} />
+          </View>
+        ) : null}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-function MetricCarousel({ latest }: { latest: DurianTelemetryReading }) {
-  const renderMetric = useCallback(
-    ({ item }: { item: MetricItem }) => (
-      <MetricCard item={item} value={latest[item.id]} />
-    ),
-    [latest],
-  );
-
+function DeviceChip({
+  active,
+  device,
+  onPress,
+}: {
+  active: boolean;
+  device: IotDevice;
+  onPress: () => void;
+}) {
   return (
-    <View style={styles.section}>
-      <SectionHeading
-        caption="6 chỉ số đang hoạt động"
-        title="Chỉ số tức thời"
-      />
-      <FlatList
-        contentContainerStyle={styles.horizontalList}
-        data={METRICS}
-        horizontal
-        keyExtractor={(item) => item.id}
-        renderItem={renderMetric}
-        showsHorizontalScrollIndicator={false}
-      />
+    <Pressable onPress={onPress} style={[styles.deviceChip, active && styles.deviceChipActive]}>
+      <RadioTower color={active ? durianTheme.colors.white : durianTheme.colors.moss} size={18} />
+      <Text style={[styles.deviceChipName, active && styles.deviceChipNameActive]}>{device.name}</Text>
+      <Text style={[styles.deviceChipMeta, active && styles.deviceChipNameActive]}>
+        {device.connectivityStatus ?? "UNKNOWN"} · Farm {shortFoundationId(device.farmId)}
+      </Text>
+    </Pressable>
+  );
+}
+
+function AlertListCard({
+  alerts,
+  onAcknowledge,
+  submitting,
+}: {
+  alerts: IotAlert[];
+  onAcknowledge: (alertId: string) => void;
+  submitting: boolean;
+}) {
+  return (
+    <View style={styles.chartCard}>
+      <SectionHeading caption="Nguồn thật từ /api/iot/alerts?status=ALERTING" title="Cảnh báo IoT" />
+      {alerts.length === 0 ? (
+        <Text style={styles.emptyText}>Không có alert IoT đang mở.</Text>
+      ) : (
+        alerts.slice(0, 5).map((alert) => (
+          <View key={alert.id} style={styles.alertRow}>
+            <View style={styles.alertIcon}>
+              <Bell color={durianTheme.colors.warning} size={18} />
+            </View>
+            <View style={styles.alertCopy}>
+              <Text style={styles.alertTitle}>{alert.alertType}</Text>
+              <Text style={styles.alertText}>{alert.deviceName} · {alert.message}</Text>
+              <Text style={styles.alertMeta}>{alert.lastObservedAt ? formatDateTime(alert.lastObservedAt) : "Chưa rõ thời điểm"}</Text>
+            </View>
+            <Pressable disabled={submitting} onPress={() => onAcknowledge(alert.id)} style={styles.alertAckButton}>
+              <Text style={styles.alertAckText}>Đã xem</Text>
+            </Pressable>
+          </View>
+        ))
+      )}
     </View>
   );
 }
 
-function MetricCard({ item, value }: { item: MetricItem; value: number }) {
-  const Icon = item.icon;
+function DeviceManagementCard({
+  editDraft,
+  editZones,
+  farms,
+  onChangeEdit,
+  onChangeRegister,
+  onDelete,
+  onRegister,
+  onUpdate,
+  registerDraft,
+  registerFarmId,
+  registerZones,
+  selectedDevice,
+  submitting,
+}: {
+  editDraft: { cultivationAreaId: string; farmId: string; name: string; status: MutableIotDeviceStatus };
+  editZones: CareZoneOption[];
+  farms: CareFarmOption[];
+  onChangeEdit: (draft: { cultivationAreaId: string; farmId: string; name: string; status: MutableIotDeviceStatus }) => void;
+  onChangeRegister: (draft: { cultivationAreaId: string; deviceUid: string; farmId: string; name: string }) => void;
+  onDelete: () => void;
+  onRegister: () => void;
+  onUpdate: () => void;
+  registerDraft: { cultivationAreaId: string; deviceUid: string; farmId: string; name: string };
+  registerFarmId: string;
+  registerZones: CareZoneOption[];
+  selectedDevice: IotDevice | null;
+  submitting: boolean;
+}) {
+  return (
+    <View style={styles.chartCard}>
+      <SectionHeading
+        caption="Quản lý registry thật, yêu cầu quyền CONFIGURE_DEVICE từ Farm service."
+        title="Đăng ký & gán thiết bị"
+      />
+      {farms.length === 0 ? (
+        <Text style={styles.emptyText}>
+          Chưa có farm catalog khả dụng. Không thể đăng ký thiết bị nếu thiếu farmId thật.
+        </Text>
+      ) : (
+        <>
+          <TextInput
+            autoCapitalize="none"
+            onChangeText={(deviceUid) => onChangeRegister({ ...registerDraft, deviceUid })}
+            placeholder="UID thiết bị, ví dụ esp32:north-01"
+            placeholderTextColor={durianTheme.colors.muted}
+            style={styles.input}
+            value={registerDraft.deviceUid}
+          />
+          <TextInput
+            onChangeText={(name) => onChangeRegister({ ...registerDraft, name })}
+            placeholder="Tên hiển thị"
+            placeholderTextColor={durianTheme.colors.muted}
+            style={styles.input}
+            value={registerDraft.name}
+          />
+          <OptionRow
+            options={farms.map((farm) => ({ id: farm.farmId, label: farm.label }))}
+            selectedId={registerFarmId}
+            onSelect={(farmId) => onChangeRegister({ ...registerDraft, cultivationAreaId: "", farmId })}
+          />
+          <OptionRow
+            emptyLabel="Không gắn khu"
+            options={registerZones.map((zone) => ({ id: zone.zoneId, label: zone.label }))}
+            selectedId={registerDraft.cultivationAreaId}
+            onSelect={(cultivationAreaId) => onChangeRegister({ ...registerDraft, cultivationAreaId })}
+          />
+          <Pressable disabled={submitting} onPress={onRegister} style={styles.primaryButton}>
+            <Settings color={durianTheme.colors.white} size={17} />
+            <Text style={styles.primaryButtonText}>Đăng ký thiết bị</Text>
+          </Pressable>
+        </>
+      )}
+
+      {selectedDevice ? (
+        <View style={styles.managementDivider}>
+          <Text style={styles.managementTitle}>Thiết bị đang chọn</Text>
+          <Text style={styles.managementMeta}>{selectedDevice.deviceUid}</Text>
+          <TextInput
+            onChangeText={(name) => onChangeEdit({ ...editDraft, name })}
+            placeholder="Tên thiết bị"
+            placeholderTextColor={durianTheme.colors.muted}
+            style={styles.input}
+            value={editDraft.name}
+          />
+          <OptionRow
+            options={farms.map((farm) => ({ id: farm.farmId, label: farm.label }))}
+            selectedId={editDraft.farmId}
+            onSelect={(farmId) => onChangeEdit({ ...editDraft, cultivationAreaId: "", farmId })}
+          />
+          <OptionRow
+            emptyLabel="Không gắn khu"
+            options={editZones.map((zone) => ({ id: zone.zoneId, label: zone.label }))}
+            selectedId={editDraft.cultivationAreaId}
+            onSelect={(cultivationAreaId) => onChangeEdit({ ...editDraft, cultivationAreaId })}
+          />
+          <OptionRow
+            options={DEVICE_STATUSES.map((status) => ({ id: status, label: status }))}
+            selectedId={editDraft.status}
+            onSelect={(status) => onChangeEdit({ ...editDraft, status: status as MutableIotDeviceStatus })}
+          />
+          <View style={styles.managementActions}>
+            <Pressable disabled={submitting} onPress={onUpdate} style={styles.primaryButtonSmall}>
+              <Save color={durianTheme.colors.white} size={16} />
+              <Text style={styles.primaryButtonText}>Lưu</Text>
+            </Pressable>
+            <Pressable disabled={submitting} onPress={onDelete} style={styles.dangerButton}>
+              <Trash2 color={durianTheme.colors.danger} size={16} />
+              <Text style={styles.dangerButtonText}>Xóa registry</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function OptionRow({
+  emptyLabel,
+  onSelect,
+  options,
+  selectedId,
+}: {
+  emptyLabel?: string;
+  onSelect: (id: string) => void;
+  options: Array<{ id: string; label: string }>;
+  selectedId: string;
+}) {
+  const items = emptyLabel ? [{ id: "", label: emptyLabel }, ...options] : options;
+  if (items.length === 0) return null;
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionScroller}>
+      <View style={styles.optionRow}>
+        {items.map((item) => {
+          const active = item.id === selectedId;
+          return (
+            <Pressable
+              key={`${item.id || "empty"}-${item.label}`}
+              onPress={() => onSelect(item.id)}
+              style={[styles.optionChip, active && styles.optionChipActive]}
+            >
+              <Text style={[styles.optionChipText, active && styles.optionChipTextActive]}>{item.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+}
+
+function MetricCard({
+  metric,
+  value,
+}: {
+  metric: (typeof METRICS)[number];
+  value: number | null;
+}) {
+  const Icon = metric.icon;
   return (
     <View style={styles.metricCard}>
-      <View style={[styles.metricIcon, { backgroundColor: item.accent }]}>
-        <Icon color={durianTheme.colors.mossDark} size={21} />
+      <View style={[styles.metricIcon, { backgroundColor: metric.accent }]}>
+        <Icon color={durianTheme.colors.mossDark} size={20} />
       </View>
       <Text style={styles.metricValue}>
-        {item.id === "airTemperature" ? value.toFixed(1) : Math.round(value)}
-        <Text style={styles.metricUnit}>{item.unit}</Text>
+        {formatMetricValue(value)}
+        <Text style={styles.metricUnit}>{value === null ? "" : ` ${metric.unit}`}</Text>
       </Text>
-      <Text style={styles.metricLabel}>{item.label}</Text>
-      <Text style={styles.metricRange}>{item.range}</Text>
+      <Text style={styles.metricLabel}>{metric.label}</Text>
     </View>
   );
 }
 
-function ClimateLineChart({
+function TelemetryLineChart({
   chartWidth,
   series,
 }: {
   chartWidth: number;
-  series: DurianTelemetryReading[];
+  series: IotTelemetryReading[];
 }) {
   const chartHeight = 150;
-  const temperaturePoints = createPolylinePoints(
-    series,
-    chartWidth,
-    chartHeight,
-    "airTemperature",
-    26,
-    35,
-  );
-  const humidityPoints = createPolylinePoints(
-    series,
-    chartWidth,
-    chartHeight,
-    "airHumidity",
-    55,
-    95,
-  );
-
+  const temperaturePoints = createPolylinePoints(series, chartWidth, chartHeight, "temperature");
+  const humidityPoints = createPolylinePoints(series, chartWidth, chartHeight, "humidity");
   return (
-    <View style={styles.chartCard}>
-      <SectionHeading
-        caption="DHT22 · nhiệt độ và độ ẩm không khí"
-        title="Vi khí hậu theo thời gian"
-      />
-      <View style={styles.legendRow}>
-        <Legend color={durianTheme.colors.durianYellow} label="Nhiệt độ" />
-        <Legend color="#72BFA9" label="Độ ẩm không khí" />
-      </View>
+    <View style={styles.svgWrap}>
       <Svg height={chartHeight} width="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
         <LineGrid chartHeight={chartHeight} chartWidth={chartWidth} />
         <Polyline
@@ -291,166 +703,46 @@ function ClimateLineChart({
         <LatestPoint color={durianTheme.colors.durianYellow} points={temperaturePoints} />
         <LatestPoint color="#72BFA9" points={humidityPoints} />
       </Svg>
-      <TimeLabels series={series} />
     </View>
   );
 }
 
-function SoilMoistureChart({ series }: { series: DurianTelemetryReading[] }) {
-  const renderBar = useCallback(
-    ({ item }: { item: DurianTelemetryReading }) => (
-      <View style={styles.barColumn}>
-        <Text style={styles.barValue}>{item.soilMoisture}</Text>
-        <View style={styles.barTrack}>
-          <View
-            style={[
-              styles.barFill,
-              { height: `${Math.max(12, item.soilMoisture)}%` as `${number}%` },
-            ]}
-          />
-        </View>
-        <Text style={styles.timeLabel}>{item.time.slice(0, 2)}</Text>
-      </View>
-    ),
-    [],
-  );
-
-  return (
-    <View style={styles.chartCard}>
-      <SectionHeading
-        caption="Cảm biến điện dung · ngưỡng mục tiêu 70 - 85%"
-        title="Độ ẩm vùng rễ"
-      />
-      <FlatList
-        contentContainerStyle={styles.barChart}
-        data={series}
-        horizontal
-        keyExtractor={(item, index) => `${item.time}-${index}`}
-        renderItem={renderBar}
-        scrollEnabled={false}
-      />
-    </View>
-  );
-}
-
-function NutrientCard({ latest }: { latest: DurianTelemetryReading }) {
-  return (
-    <View style={styles.chartCard}>
-      <SectionHeading
-        caption="Cảm biến NPK RS485 · đơn vị mg/kg"
-        title="Dinh dưỡng đất"
-      />
-      <View style={styles.nutrientList}>
-        <NutrientRow
-          color="#8EC67C"
-          label="Nitrogen"
-          max={150}
-          short="N"
-          value={latest.nitrogen}
-        />
-        <NutrientRow
-          color="#B9A2DD"
-          label="Phosphorus"
-          max={65}
-          short="P"
-          value={latest.phosphorus}
-        />
-        <NutrientRow
-          color="#EDBD69"
-          label="Potassium"
-          max={200}
-          short="K"
-          value={latest.potassium}
-        />
-      </View>
-    </View>
-  );
-}
-
-function NutrientRow({
-  color,
-  label,
-  max,
-  short,
-  value,
+function DeviceDetail({
+  device,
+  latest,
 }: {
-  color: string;
-  label: string;
-  max: number;
-  short: string;
-  value: number;
+  device: IotDevice;
+  latest: IotTelemetryReading | null;
 }) {
   return (
-    <View style={styles.nutrientRow}>
-      <View style={[styles.nutrientBadge, { backgroundColor: color }]}>
-        <Text style={styles.nutrientShort}>{short}</Text>
-      </View>
-      <View style={styles.nutrientCopy}>
-        <View style={styles.nutrientHeading}>
-          <Text style={styles.nutrientLabel}>{label}</Text>
-          <Text style={styles.nutrientValue}>{value} mg/kg</Text>
-        </View>
-        <View style={styles.nutrientTrack}>
-          <View
-            style={[
-              styles.nutrientFill,
-              {
-                backgroundColor: color,
-                width: `${Math.min(100, (value / max) * 100)}%` as `${number}%`,
-              },
-            ]}
-          />
-        </View>
-      </View>
+    <View style={styles.detailList}>
+      <DetailRow label="UID" value={device.deviceUid} />
+      <DetailRow label="Farm" value={device.farmId} />
+      <DetailRow label="Khu/plot" value={device.cultivationAreaId ?? "Không gắn khu"} />
+      <DetailRow label="Registry status" value={device.status} />
+      <DetailRow label="Connectivity" value={device.connectivityStatus ?? "UNKNOWN"} />
+      <DetailRow label="Telemetry state" value={device.telemetryState} />
+      <DetailRow label="Connectivity basis" value={device.connectivity?.basis ?? "Backend"} />
+      <DetailRow label="Measured at" value={latest?.measuredAt ? formatDateTime(latest.measuredAt) : "Chưa có"} />
+      <DetailRow label="Received at" value={latest?.receivedAt ? formatDateTime(latest.receivedAt) : "Chưa có"} />
     </View>
   );
 }
 
-function StationCarousel({ stations }: { stations: DurianSensorStation[] }) {
-  const renderStation = useCallback(
-    ({ item }: { item: DurianSensorStation }) => <StationCard station={item} />,
-    [],
-  );
-
+function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.section}>
-      <SectionHeading
-        caption="Thiết bị và kết nối tại vườn"
-        title="Trạm cảm biến"
-      />
-      <FlatList
-        contentContainerStyle={styles.horizontalList}
-        data={stations}
-        horizontal
-        keyExtractor={(item) => item.id}
-        renderItem={renderStation}
-        showsHorizontalScrollIndicator={false}
-      />
+    <View style={styles.detailRow}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue}>{value}</Text>
     </View>
   );
 }
 
-function StationCard({ station }: { station: DurianSensorStation }) {
-  const isOnline = station.status === "ONLINE";
+function EmptyCard({ body, title }: { body: string; title: string }) {
   return (
-    <View style={styles.stationCard}>
-      <View style={styles.stationHeading}>
-        <View style={styles.stationIcon}>
-          <RadioTower color={durianTheme.colors.moss} size={21} />
-        </View>
-        <View style={[styles.stationStatus, !isOnline && styles.stationStatusWarning]}>
-          <Text style={styles.stationStatusText}>{isOnline ? "ONLINE" : "BẢO TRÌ"}</Text>
-        </View>
-      </View>
-      <Text style={styles.stationName}>{station.name}</Text>
-      <Text style={styles.stationDevice}>{station.device}</Text>
-      <View style={styles.stationFooter}>
-        <Text style={styles.stationMeta}>{station.lastSeen}</Text>
-        <View style={styles.battery}>
-          <BatteryMedium color={durianTheme.colors.moss} size={17} />
-          <Text style={styles.batteryText}>{station.battery}%</Text>
-        </View>
-      </View>
+    <View style={styles.chartCard}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={styles.emptyText}>{body}</Text>
     </View>
   );
 }
@@ -461,31 +753,6 @@ function SectionHeading({ caption, title }: { caption: string; title: string }) 
       <Text style={styles.sectionTitle}>{title}</Text>
       <Text style={styles.sectionCaption}>{caption}</Text>
     </View>
-  );
-}
-
-function IconButton({
-  icon: Icon,
-  label,
-  onPress,
-}: {
-  icon: typeof Activity;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      hitSlop={8}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.iconButton,
-        pressed && styles.pressedButton,
-      ]}
-    >
-      <Icon color={durianTheme.colors.moss} size={19} />
-    </Pressable>
   );
 }
 
@@ -515,103 +782,174 @@ function LineGrid({ chartHeight, chartWidth }: { chartHeight: number; chartWidth
 }
 
 function LatestPoint({ color, points }: { color: string; points: string }) {
-  const latestPoint = points.split(" ").at(-1);
+  const latestPoint = points.split(" ").filter(Boolean).at(-1);
   if (!latestPoint) return null;
   const [cx, cy] = latestPoint.split(",");
-  return (
-    <Circle
-      cx={cx}
-      cy={cy}
-      fill={color}
-      r="5"
-      stroke={durianTheme.colors.mossDark}
-      strokeWidth="2"
-    />
-  );
-}
-
-function TimeLabels({ series }: { series: DurianTelemetryReading[] }) {
-  const renderLabel = useCallback(
-    ({ item }: { item: DurianTelemetryReading }) => (
-      <Text style={styles.timeLabel}>{item.time.slice(0, 2)}</Text>
-    ),
-    [],
-  );
-  return (
-    <FlatList
-      contentContainerStyle={styles.timeLabels}
-      data={series}
-      horizontal
-      keyExtractor={(item, index) => `${item.time}-${index}`}
-      renderItem={renderLabel}
-      scrollEnabled={false}
-    />
-  );
+  return <Circle cx={cx} cy={cy} fill={color} r="5" />;
 }
 
 function createPolylinePoints(
-  series: DurianTelemetryReading[],
+  series: IotTelemetryReading[],
   width: number,
   height: number,
-  field: "airHumidity" | "airTemperature",
-  minimum: number,
-  maximum: number,
-): string {
+  field: "humidity" | "temperature",
+) {
+  const values = series.map((item) => item[field]).filter((value): value is number => value !== null);
+  if (values.length === 0) return "";
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const span = Math.max(1, maximum - minimum);
   return series
     .map((item, index) => {
+      const value = item[field];
+      if (value === null) return "";
       const x = 14 + index * ((width - 28) / Math.max(1, series.length - 1));
-      const normalized = (item[field] - minimum) / (maximum - minimum);
+      const normalized = (value - minimum) / span;
       const y = height - 20 - normalized * (height - 40);
       return `${x},${Math.max(18, Math.min(height - 18, y))}`;
     })
+    .filter(Boolean)
     .join(" ");
 }
 
+function formatMetricValue(value: number | null) {
+  if (value === null) return "--";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Không rõ";
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function messageFromError(error: unknown) {
+  return error instanceof Error ? error.message : "Không thể tải dữ liệu IoT.";
+}
+
 const styles = StyleSheet.create({
-  barChart: {
-    alignItems: "flex-end",
-    height: 146,
-    justifyContent: "space-between",
-    marginTop: 12,
-    width: "100%",
+  alertAckButton: {
+    alignItems: "center",
+    backgroundColor: "#F4F3EC",
+    borderRadius: 12,
+    minHeight: 36,
+    justifyContent: "center",
+    paddingHorizontal: 10,
   },
-  barColumn: { alignItems: "center", flex: 1, gap: 4 },
-  barFill: {
-    backgroundColor: durianTheme.colors.durianYellow,
-    borderRadius: 7,
-    bottom: 0,
-    position: "absolute",
-    width: "100%",
-  },
-  barTrack: {
-    backgroundColor: durianTheme.colors.mossSoft,
-    borderRadius: 7,
-    height: 104,
-    overflow: "hidden",
-    position: "relative",
-    width: 18,
-  },
-  barValue: {
+  alertAckText: {
     color: durianTheme.colors.moss,
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: "900",
-    lineHeight: 13,
   },
-  battery: { alignItems: "center", flexDirection: "row", gap: 4 },
-  batteryText: {
-    color: durianTheme.colors.moss,
+  alertCopy: { flex: 1, gap: 2 },
+  alertIcon: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.warningSoft,
+    borderRadius: durianTheme.radius.sm,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  alertMeta: {
+    color: durianTheme.colors.muted,
     fontSize: 10,
+    fontWeight: "700",
+  },
+  alertRow: {
+    alignItems: "center",
+    borderTopColor: "#ECE8D8",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    paddingTop: 10,
+  },
+  alertText: {
+    color: durianTheme.colors.muted,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  alertTitle: {
+    color: durianTheme.colors.ink,
+    fontSize: 12,
     fontWeight: "900",
-    lineHeight: 14,
   },
   chartCard: {
     backgroundColor: durianTheme.colors.surface,
-    borderColor: "#ECE8D8",
-    borderRadius: 22,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
     borderWidth: 1,
+    gap: 10,
     padding: 17,
   },
-  content: { gap: 14, paddingBottom: 44 },
+  content: { gap: durianTheme.spacing.lg, paddingBottom: 44 },
+  detailLabel: {
+    color: durianTheme.colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  detailList: { gap: 10, marginTop: 12 },
+  detailRow: {
+    borderBottomColor: "#ECE8D8",
+    borderBottomWidth: 1,
+    gap: 3,
+    paddingBottom: 8,
+  },
+  detailValue: {
+    color: durianTheme.colors.ink,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  deviceChip: {
+    backgroundColor: durianTheme.colors.surface,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
+    borderWidth: 1,
+    gap: 5,
+    minHeight: 112,
+    padding: 14,
+    width: 180,
+  },
+  deviceChipActive: {
+    backgroundColor: durianTheme.colors.moss,
+    borderColor: durianTheme.colors.moss,
+  },
+  deviceChipMeta: {
+    color: durianTheme.colors.muted,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  deviceChipName: {
+    color: durianTheme.colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  deviceChipNameActive: { color: durianTheme.colors.white },
+  emptyText: {
+    color: durianTheme.colors.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 8,
+  },
+  errorCard: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.warningSoft,
+    borderRadius: durianTheme.radius.md,
+    flexDirection: "row",
+    gap: 9,
+    padding: 13,
+  },
+  errorText: {
+    color: durianTheme.colors.ink,
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+  },
   headerBlock: { gap: 12 },
   horizontalList: { gap: 11, paddingHorizontal: 18 },
   iconButton: {
@@ -622,6 +960,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 44,
   },
+  input: {
+    backgroundColor: durianTheme.colors.surface,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.sm,
+    borderWidth: 1,
+    color: durianTheme.colors.ink,
+    fontSize: 13,
+    fontWeight: "700",
+    minHeight: 46,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+  },
   legendDot: { borderRadius: 5, height: 9, width: 9 },
   legendItem: { alignItems: "center", flexDirection: "row", gap: 6 },
   legendRow: { flexDirection: "row", gap: 14, marginBottom: 4, marginTop: 12 },
@@ -631,115 +981,140 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 14,
   },
-  liveCopy: { alignItems: "center", flex: 1, flexDirection: "row", gap: 9 },
   liveDot: {
-    backgroundColor: "#48B475",
+    backgroundColor: durianTheme.colors.success,
     borderRadius: 6,
     height: 10,
-    shadowColor: "#48B475",
-    shadowOpacity: 0.5,
-    shadowRadius: 5,
     width: 10,
   },
-  liveDotPaused: { backgroundColor: durianTheme.colors.warning },
+  liveDotMuted: { backgroundColor: durianTheme.colors.warning },
   liveMeta: {
-    color: durianTheme.colors.mist,
-    fontSize: 9,
-    lineHeight: 13,
+    color: durianTheme.colors.muted,
+    ...durianTheme.typography.caption,
     marginTop: 1,
   },
   liveTitle: {
-    color: durianTheme.colors.white,
-    fontSize: 12,
-    fontWeight: "900",
-    lineHeight: 17,
-  },
-  liveToolbar: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.moss,
-    borderRadius: 20,
-    flexDirection: "row",
-    marginHorizontal: 18,
-    padding: 12,
+    color: durianTheme.colors.ink,
+    ...durianTheme.typography.bodyStrong,
   },
   metricCard: {
-    backgroundColor: durianTheme.colors.moss,
-    borderRadius: 20,
-    minHeight: 164,
-    padding: 15,
-    width: 156,
+    backgroundColor: durianTheme.colors.surface,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 142,
+    padding: 13,
   },
+  metricGrid: { flexDirection: "row", gap: 9 },
   metricIcon: {
     alignItems: "center",
-    borderRadius: 13,
-    height: 42,
+    borderRadius: 12,
+    height: 38,
     justifyContent: "center",
-    marginBottom: 12,
-    width: 42,
+    marginBottom: 11,
+    width: 38,
   },
   metricLabel: {
-    color: durianTheme.colors.white,
-    fontSize: 12,
+    color: durianTheme.colors.ink,
+    fontSize: 11,
     fontWeight: "800",
-    lineHeight: 17,
+    lineHeight: 16,
     marginTop: 3,
   },
-  metricRange: {
-    color: durianTheme.colors.mist,
-    fontSize: 9,
-    lineHeight: 14,
+  metricUnit: { fontSize: 11, lineHeight: 16 },
+  metricValue: {
+    color: durianTheme.colors.moss,
+    fontSize: 21,
+    fontWeight: "900",
+    lineHeight: 27,
+  },
+  managementActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
     marginTop: 2,
   },
-  metricUnit: { fontSize: 12, lineHeight: 17 },
-  metricValue: {
-    color: durianTheme.colors.durianYellow,
-    fontSize: 24,
-    fontWeight: "900",
-    lineHeight: 30,
+  managementDivider: {
+    borderTopColor: "#ECE8D8",
+    borderTopWidth: 1,
+    gap: 10,
+    marginTop: 16,
+    paddingTop: 14,
   },
-  nutrientBadge: {
-    alignItems: "center",
-    borderRadius: 14,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  nutrientCopy: { flex: 1, gap: 7 },
-  nutrientFill: { borderRadius: 4, height: "100%" },
-  nutrientHeading: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  nutrientLabel: {
-    color: durianTheme.colors.ink,
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 18,
-  },
-  nutrientList: { gap: 14, marginTop: 16 },
-  nutrientRow: { alignItems: "center", flexDirection: "row", gap: 12 },
-  nutrientShort: {
-    color: durianTheme.colors.mossDark,
-    fontSize: 16,
-    fontWeight: "900",
-    lineHeight: 21,
-  },
-  nutrientTrack: {
-    backgroundColor: durianTheme.colors.mossSoft,
-    borderRadius: 4,
-    height: 7,
-    overflow: "hidden",
-  },
-  nutrientValue: {
-    color: durianTheme.colors.moss,
+  managementMeta: {
+    color: durianTheme.colors.muted,
     fontSize: 11,
-    fontWeight: "900",
-    lineHeight: 16,
+    fontWeight: "700",
+    marginTop: -6,
   },
-  pressedButton: { transform: [{ scale: 0.94 }] },
+  managementTitle: {
+    color: durianTheme.colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  optionChip: {
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderColor: durianTheme.colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+  },
+  optionChipActive: {
+    backgroundColor: durianTheme.colors.moss,
+    borderColor: durianTheme.colors.moss,
+  },
+  optionChipText: {
+    color: durianTheme.colors.ink,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  optionChipTextActive: { color: durianTheme.colors.white },
+  optionRow: { flexDirection: "row", gap: 8, paddingRight: 10 },
+  optionScroller: { marginVertical: 2 },
+  primaryButton: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: durianTheme.colors.moss,
+    borderRadius: 14,
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4,
+    minHeight: 44,
+    paddingHorizontal: 14,
+  },
+  primaryButtonSmall: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.moss,
+    borderRadius: 14,
+    flexDirection: "row",
+    gap: 7,
+    minHeight: 42,
+    paddingHorizontal: 13,
+  },
+  primaryButtonText: {
+    color: durianTheme.colors.white,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  dangerButton: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.dangerSoft,
+    borderColor: durianTheme.colors.danger,
+    borderRadius: durianTheme.radius.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 7,
+    minHeight: 42,
+    paddingHorizontal: 13,
+  },
+  dangerButtonText: {
+    color: durianTheme.colors.danger,
+    fontSize: 12,
+    fontWeight: "900",
+  },
   safeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 },
-  section: { gap: 11 },
   sectionCaption: {
     color: durianTheme.colors.muted,
     fontSize: 10,
@@ -753,71 +1128,16 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     lineHeight: 24,
   },
-  stationCard: {
+  svgWrap: { marginTop: 8 },
+  toolbar: {
+    alignItems: "center",
     backgroundColor: durianTheme.colors.surface,
-    borderColor: "#E7E4D5",
-    borderRadius: 20,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
     borderWidth: 1,
-    padding: 15,
-    width: 230,
-  },
-  stationDevice: {
-    color: durianTheme.colors.muted,
-    fontSize: 10,
-    lineHeight: 15,
-    marginTop: 3,
-  },
-  stationFooter: {
-    alignItems: "center",
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 15,
+    marginHorizontal: 18,
+    padding: 12,
   },
-  stationHeading: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  stationIcon: {
-    alignItems: "center",
-    backgroundColor: durianTheme.colors.mossSoft,
-    borderRadius: 13,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  stationMeta: {
-    color: durianTheme.colors.muted,
-    fontSize: 9,
-    lineHeight: 13,
-  },
-  stationName: {
-    color: durianTheme.colors.ink,
-    fontSize: 15,
-    fontWeight: "900",
-    lineHeight: 21,
-    marginTop: 12,
-  },
-  stationStatus: {
-    backgroundColor: "#DDF3E5",
-    borderRadius: durianTheme.radius.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
-  stationStatusText: {
-    color: durianTheme.colors.moss,
-    fontSize: 8,
-    fontWeight: "900",
-    lineHeight: 11,
-  },
-  stationStatusWarning: { backgroundColor: "#FFF0CB" },
-  timeLabel: {
-    color: durianTheme.colors.muted,
-    flex: 1,
-    fontSize: 8,
-    lineHeight: 12,
-    textAlign: "center",
-  },
-  timeLabels: { justifyContent: "space-between", width: "100%" },
-  toolbarActions: { flexDirection: "row", gap: 8 },
+  toolbarCopy: { alignItems: "center", flex: 1, flexDirection: "row", gap: 9 },
 });
