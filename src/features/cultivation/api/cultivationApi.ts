@@ -2,9 +2,12 @@ import { authorizedRequest } from "@/src/features/auth/authApi";
 
 import type {
   ComplianceAssessment,
+  CreateCultivationScheduleRequest,
   CultivationActivity,
   CultivationPlan,
+  CultivationSchedule,
   SafeHarvestDateResponse,
+  ScheduleTaskStatus,
 } from "./cultivationTypes";
 
 export async function listCultivationActivities(query = "") {
@@ -52,6 +55,42 @@ export async function assessCompliance(cultivationSeasonId: string, targetMarket
     method: "POST",
     url: `/api/v1/cultivation-seasons/${encodeURIComponent(cultivationSeasonId)}/compliance-assessments`,
     data: { targetMarketCode },
+  });
+  return response.data;
+}
+
+export async function listCultivationSchedules(params?: {
+  zoneId?: string;
+  type?: string;
+  status?: string;
+}) {
+  const qs = params
+    ? Object.entries(params)
+        .filter(([, v]) => v != null && v !== "")
+        .map(([k, v]) => `${k}=${encodeURIComponent(v!)}`)
+        .join("&")
+    : "";
+  const response = await authorizedRequest<CultivationSchedule[]>({
+    method: "GET",
+    url: `/api/cultivation-schedules${qs ? `?${qs}` : ""}`,
+  });
+  return response.data;
+}
+
+export async function createCultivationSchedule(req: CreateCultivationScheduleRequest) {
+  const response = await authorizedRequest<CultivationSchedule>({
+    method: "POST",
+    url: "/api/cultivation-schedules",
+    data: req,
+  });
+  return response.data;
+}
+
+export async function updateCultivationScheduleStatus(id: string, status: ScheduleTaskStatus) {
+  const response = await authorizedRequest<CultivationSchedule>({
+    method: "PATCH",
+    url: `/api/cultivation-schedules/${encodeURIComponent(id)}/status`,
+    data: { status },
   });
   return response.data;
 }

@@ -10,6 +10,7 @@ import {
   QrCode,
   Search,
   ShieldCheck,
+  TreePine,
   UserRound,
   Users,
 } from "lucide-react-native";
@@ -59,6 +60,18 @@ const moreItems = [
     href: "/(main)/community",
     icon: Users,
     title: "Cộng đồng",
+  },
+  {
+    description: "Kết nối với nhà nông và kỹ sư khác trong mạng lưới DurianCare.",
+    href: "/(main)/connections",
+    icon: Users,
+    title: "Kết nối",
+  },
+  {
+    description: "Xem bản đồ cây theo vùng trồng, tình trạng sức khỏe và lịch sử chuẩn đoán.",
+    href: "/(main)/farms",
+    icon: TreePine,
+    title: "Bản đồ cây",
   },
   {
     description: "Theo dõi cảm biến nhiệt độ, độ ẩm đất và trạng thái trạm tại vườn.",

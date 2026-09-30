@@ -95,3 +95,35 @@ export type SafeHarvestDateResponse = {
   cultivationSeasonId: string;
   earliestSafeHarvestDate?: string | null;
 };
+
+export type ScheduleTaskType = "fertilizer" | "pesticide" | "irrigation" | "pruning" | "inspection";
+export type ScheduleTaskStatus = "planned" | "in-progress" | "done";
+
+export type CultivationSchedule = {
+  id: string;
+  zoneId: string;
+  cropId: string;
+  type: ScheduleTaskType;
+  status: ScheduleTaskStatus;
+  date: string;
+  time: string;
+  materialName: string;
+  dosage: string;
+  assignee: string;
+  safetyInterval: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateCultivationScheduleRequest = {
+  zoneId: string;
+  cropId: string;
+  type: ScheduleTaskType;
+  scheduledAt: string;
+  materialName: string;
+  dosage: string;
+  assignee: string;
+  safetyInterval: string;
+  notes: string;
+};

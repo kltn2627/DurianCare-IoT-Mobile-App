@@ -149,6 +149,63 @@ export function getSnapshotUrl(deviceId: string): string {
   return `${base}/api/v1/camera/snapshot?device_id=${encodeURIComponent(deviceId)}`;
 }
 
+// ── Camera Device Registry ────────────────────────────────────────────────────
+
+export type CameraDevice = {
+  id:               string;
+  device_id:        string;
+  mac_address:      string | null;
+  ip_address:       string;
+  port:             number;
+  protocol:         "http" | "https";
+  online:           boolean;
+  last_seen:        string | null;
+  firmware_version: string | null;
+  ssid:             string | null;
+  tree_id:          string | null;
+  zone_id:          string | null;
+  farm_id:          string | null;
+  capabilities:     string[] | null;
+  created_at:       string;
+  updated_at:       string;
+};
+
+export async function listCameraDevices(): Promise<{ devices: CameraDevice[] }> {
+  return iotFetch<{ devices: CameraDevice[] }>("/api/v1/camera/devices");
+}
+
+export async function getCameraDevice(deviceId: string): Promise<{ device: CameraDevice }> {
+  return iotFetch<{ device: CameraDevice }>(
+    `/api/v1/camera/devices/${encodeURIComponent(deviceId)}`
+  );
+}
+
+export async function updateCameraConfig(params: {
+  device_id: string;
+  camera_url: string;
+}): Promise<{ device: CameraDevice; camera_url: string }> {
+  return iotFetch<{ device: CameraDevice; camera_url: string }>("/api/v1/camera/config", {
+    method: "POST",
+    body:   JSON.stringify(params),
+  });
+}
+
+export async function pingCamera(deviceId: string): Promise<boolean> {
+  const base   = getApiBaseUrl();
+  const tokens = getCachedAuthTokens();
+  const headers: Record<string, string> = {};
+  if (tokens?.accessToken) headers["Authorization"] = `Bearer ${tokens.accessToken}`;
+  try {
+    const res = await fetch(
+      `${base}/api/v1/camera/snapshot?device_id=${encodeURIComponent(deviceId)}`,
+      { method: "HEAD", headers, signal: AbortSignal.timeout(8_000) },
+    );
+    return res.status < 500;
+  } catch {
+    return false;
+  }
+}
+
 // ── Export Assessment API ─────────────────────────────────────────────────────
 
 export type BatchStatus = "PLANNED" | "GROWING" | "HARVESTING" | "EVALUATING" | "EXPORTED";

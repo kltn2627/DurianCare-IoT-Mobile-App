@@ -2,7 +2,7 @@ import type { CameraCapturedPicture } from "expo-camera";
 
 import { durianDiseaseCatalog, type DurianDisease } from "./diseaseCatalog";
 
-const PREDICTION_PATH = "/api/v1/predict-disease";
+const PREDICTION_PATH = "/api/v1/predict";
 const REQUEST_TIMEOUT_MS = 45_000;
 
 export type PredictionBoundingBox = {
@@ -29,8 +29,10 @@ function readNumber(record: UnknownRecord, keys: string[]): number | undefined {
   for (const key of keys) {
     const value = record[key];
     if (typeof value === "number" && Number.isFinite(value)) return value;
-    if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) {
-      return Number(value);
+    if (typeof value === "string" && value.trim()) {
+      // Handle percentage strings like "48.59%" from AI service
+      const stripped = value.trim().replace(/%$/, "");
+      if (Number.isFinite(Number(stripped))) return Number(stripped);
     }
   }
   return undefined;
@@ -55,8 +57,14 @@ function unwrapPrediction(payload: unknown): UnknownRecord {
   return isRecord(firstResult) ? { ...data, ...firstResult } : data;
 }
 
+// Maps backend CLASS_LABELS (normalized) to catalog codes where names diverge
+const BACKEND_CODE_ALIASES: Record<string, string> = {
+  allocaridara_attack: "allocaridara_attacked",
+};
+
 function resolveDisease(code: string | undefined): DurianDisease {
-  const normalizedCode = code?.trim().toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
+  const raw = code?.trim().toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
+  const normalizedCode = raw !== undefined ? (BACKEND_CODE_ALIASES[raw] ?? raw) : undefined;
   const disease = durianDiseaseCatalog.find(
     (item) => item.code.toLowerCase() === normalizedCode,
   );
@@ -161,13 +169,14 @@ export async function predictDurianDisease(
 
   const formData = new FormData();
   formData.append(
-    "file",
+    "image",
     {
       name: resolveFileName(photo.uri),
       type: "image/jpeg",
       uri: photo.uri,
     } as unknown as Blob,
   );
+  formData.append("source", "MOBILE");
 
   try {
     const response = await fetch(buildPredictionUrl(), {
@@ -179,6 +188,11 @@ export async function predictDurianDisease(
 
     const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) {
+      if (response.status === 422) {
+        throw new Error(
+          "Không phát hiện lá sầu riêng trong ảnh. Hãy chụp gần hơn và đảm bảo lá chiếm phần lớn khung hình.",
+        );
+      }
       const detail = isRecord(payload)
         ? readString(payload, ["detail", "message", "error"])
         : undefined;
@@ -188,6 +202,8 @@ export async function predictDurianDisease(
     const record = unwrapPrediction(payload);
     const disease = resolveDisease(
       readString(record, [
+        "predictedDisease",  // AI service returns camelCase
+        "predicted_disease",
         "label",
         "class_name",
         "className",

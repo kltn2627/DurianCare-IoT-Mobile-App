@@ -3,12 +3,15 @@ import {
   Brain,
   Camera,
   CheckCircle2,
+  CheckCircle,
   Clock,
   Leaf,
   Loader2,
   RefreshCw,
+  Settings,
   ShieldAlert,
   X,
+  XCircle,
 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -20,6 +23,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -29,13 +33,17 @@ import { durianTheme } from "@/src/theme/durianTheme";
 import {
   captureNow,
   fetchCameraHistory,
+  getCameraDevice,
   getSnapshotUrl,
+  pingCamera,
+  updateCameraConfig,
   type CameraCapture,
+  type CameraDevice,
 } from "@/src/lib/iotApi";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const DEVICE_ID    = "esp32-cam-01";
+const DEVICE_ID    = "ESP32-CAM-001";
 const PREVIEW_POLL = 3_000;
 
 const DISEASE_NAMES: Record<string, string> = {
@@ -209,11 +217,165 @@ function DiagnosisModal({
   );
 }
 
+function CameraConfigModal({
+  deviceId,
+  visible,
+  onClose,
+  onSaved,
+}: {
+  deviceId: string;
+  visible: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [url, setUrl]           = useState("");
+  const [saving, setSaving]     = useState(false);
+  const [pinging, setPinging]   = useState(false);
+  const [pingResult, setPingResult] = useState<"ok" | "fail" | null>(null);
+  const [saveError, setSaveError]   = useState<string | null>(null);
+  const [saved, setSaved]           = useState(false);
+
+  function reset() {
+    setUrl("");
+    setSaving(false);
+    setPinging(false);
+    setPingResult(null);
+    setSaveError(null);
+    setSaved(false);
+  }
+
+  async function handlePing() {
+    setPinging(true);
+    setPingResult(null);
+    const ok = await pingCamera(deviceId);
+    setPingResult(ok ? "ok" : "fail");
+    setPinging(false);
+  }
+
+  async function handleSave() {
+    if (!url.trim()) {
+      setSaveError("Vui lòng nhập URL camera.");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await updateCameraConfig({ device_id: deviceId, camera_url: url.trim() });
+      setSaved(true);
+      onSaved();
+      setTimeout(() => { reset(); onClose(); }, 1200);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Cập nhật thất bại.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={() => { reset(); onClose(); }}
+      transparent
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Cấu hình Camera</Text>
+            <Pressable onPress={() => { reset(); onClose(); }} hitSlop={8}>
+              <X color={durianTheme.colors.muted} size={20} />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, gap: 14 }}>
+            <Text style={styles.configLabel}>
+              Nhập URL mới của ESP32-CAM khi đổi mạng Wi-Fi.{"\n"}
+              Ví dụ: <Text style={{ fontFamily: "monospace", color: durianTheme.colors.moss }}>http://192.168.1.137</Text>
+            </Text>
+
+            <View style={styles.configInputRow}>
+              <TextInput
+                value={url}
+                onChangeText={(t) => { setUrl(t); setPingResult(null); setSaveError(null); }}
+                placeholder="http://192.168.1.xxx"
+                placeholderTextColor={durianTheme.colors.mist}
+                style={styles.configInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+              />
+            </View>
+
+            <Pressable
+              onPress={handlePing}
+              disabled={pinging || !url.trim()}
+              style={[styles.pingBtn, (!url.trim() || pinging) && styles.disabled]}
+            >
+              {pinging
+                ? <><Loader2 color={durianTheme.colors.moss} size={14} /><Text style={styles.pingBtnText}>Đang kiểm tra...</Text></>
+                : <Text style={styles.pingBtnText}>Kiểm tra kết nối</Text>
+              }
+            </Pressable>
+
+            {pingResult === "ok" && (
+              <View style={styles.pingOk}>
+                <CheckCircle color="#16a34a" size={14} />
+                <Text style={{ color: "#15803d", fontSize: 12, fontWeight: "700" }}>Camera phản hồi — kết nối tốt!</Text>
+              </View>
+            )}
+            {pingResult === "fail" && (
+              <View style={styles.pingFail}>
+                <XCircle color="#dc2626" size={14} />
+                <Text style={{ color: "#991b1b", fontSize: 12, fontWeight: "700" }}>Không phản hồi — kiểm tra URL hoặc mạng.</Text>
+              </View>
+            )}
+
+            {saveError != null && (
+              <View style={styles.pingFail}>
+                <AlertCircle color="#dc2626" size={14} />
+                <Text style={{ color: "#991b1b", fontSize: 12 }}>{saveError}</Text>
+              </View>
+            )}
+
+            {saved && (
+              <View style={styles.pingOk}>
+                <CheckCircle color="#16a34a" size={14} />
+                <Text style={{ color: "#15803d", fontSize: 12, fontWeight: "700" }}>Đã lưu! Camera sẽ dùng IP mới ngay lập tức.</Text>
+              </View>
+            )}
+
+            <Pressable
+              onPress={handleSave}
+              disabled={saving || !url.trim()}
+              style={[styles.saveBtn, (saving || !url.trim()) && styles.disabled]}
+            >
+              {saving
+                ? <><Loader2 color="#fff" size={14} /><Text style={styles.saveBtnText}>Đang lưu...</Text></>
+                : <Text style={styles.saveBtnText}>Lưu cấu hình</Text>
+              }
+            </Pressable>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export function CameraMonitorScreen() {
   const [previewKey, setPreviewKey] = useState(Date.now());
   const [snapshotError, setSnapshotError] = useState(false);
+
+  // Device status from camera registry (online/offline indicator)
+  const [deviceInfo, setDeviceInfo] = useState<CameraDevice | null>(null);
+  useEffect(() => {
+    getCameraDevice(DEVICE_ID)
+      .then((r) => setDeviceInfo(r.device))
+      .catch(() => { /* device not yet registered — status unknown */ });
+  }, []);
+
+  const [configVisible, setConfigVisible] = useState(false);
 
   const [captureStep, setCaptureStep]     = useState<"idle" | "capturing" | "analyzing">("idle");
   const [captureResult, setCaptureResult] = useState<CameraCapture | null>(null);
@@ -275,7 +437,29 @@ export function CameraMonitorScreen() {
 
         {/* Live preview */}
         <View style={styles.previewCard}>
-          <Text style={styles.cardLabel}>Xem trực tiếp · {DEVICE_ID}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+            <Text style={styles.cardLabel}>Xem trực tiếp · {DEVICE_ID}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {deviceInfo != null && (
+                <View style={{
+                  flexDirection: "row", alignItems: "center", gap: 5,
+                  paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99,
+                  backgroundColor: deviceInfo.online ? "#dcfce7" : "#fee2e2",
+                }}>
+                  <View style={{
+                    width: 6, height: 6, borderRadius: 3,
+                    backgroundColor: deviceInfo.online ? "#22c55e" : "#ef4444",
+                  }} />
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: deviceInfo.online ? "#15803d" : "#dc2626" }}>
+                    {deviceInfo.online ? "Online" : "Offline"}
+                  </Text>
+                </View>
+              )}
+              <Pressable onPress={() => setConfigVisible(true)} hitSlop={8} style={styles.gearBtn}>
+                <Settings color={durianTheme.colors.muted} size={16} />
+              </Pressable>
+            </View>
+          </View>
           <View style={styles.previewBox}>
             {isCapturing && (
               <View style={styles.captureOverlay}>
@@ -382,6 +566,16 @@ export function CameraMonitorScreen() {
       </ScrollView>
 
       <DiagnosisModal capture={enlarged} onClose={() => setEnlarged(null)} />
+
+      <CameraConfigModal
+        deviceId={DEVICE_ID}
+        visible={configVisible}
+        onClose={() => setConfigVisible(false)}
+        onSaved={() => {
+          setPreviewKey(Date.now());
+          void getCameraDevice(DEVICE_ID).then((r) => setDeviceInfo(r.device)).catch(() => {});
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -447,4 +641,16 @@ const styles = StyleSheet.create({
   actionBox:       { backgroundColor: "#fef2f2", borderRadius: 12, padding: 12 },
   aiPending:       { alignItems: "center", flexDirection: "row", gap: 10, padding: 18 },
   aiPendingText:   { color: durianTheme.colors.muted, fontSize: 13 },
+
+  // Camera config modal
+  gearBtn:         { padding: 4 },
+  configLabel:     { color: durianTheme.colors.muted, fontSize: 12, lineHeight: 18 },
+  configInputRow:  { borderColor: "#ECE8D8", borderRadius: 12, borderWidth: 1, overflow: "hidden" },
+  configInput:     { color: durianTheme.colors.ink, fontSize: 13, padding: 12 },
+  pingBtn:         { alignItems: "center", borderColor: durianTheme.colors.moss, borderRadius: 12, borderWidth: 1.5, flexDirection: "row", gap: 6, justifyContent: "center", paddingVertical: 10 },
+  pingBtnText:     { color: durianTheme.colors.moss, fontSize: 13, fontWeight: "700" },
+  pingOk:          { alignItems: "center", backgroundColor: "#f0fdf4", borderRadius: 10, flexDirection: "row", gap: 8, padding: 10 },
+  pingFail:        { alignItems: "center", backgroundColor: "#fef2f2", borderRadius: 10, flexDirection: "row", gap: 8, padding: 10 },
+  saveBtn:         { alignItems: "center", backgroundColor: durianTheme.colors.moss, borderRadius: 14, flexDirection: "row", gap: 8, justifyContent: "center", paddingVertical: 13 },
+  saveBtnText:     { color: "#fff", fontSize: 14, fontWeight: "800" },
 });

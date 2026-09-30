@@ -1,7 +1,8 @@
 import { ArrowLeft, CalendarDays, Clock3, Maximize2, Minus, Plus, X } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   type ImageSourcePropType,
   Modal,
@@ -16,19 +17,41 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
 import { durianTheme } from "@/src/theme/durianTheme";
 
+import { fetchKnowledgeArticle, type KnowledgeArticleDTO } from "./knowledgeApi";
 import { findKnowledgeArticle } from "./knowledgeArticles";
+
+const LOCAL_PLACEHOLDER = require("../../../assets/images/community/leaf-blight.jpg") as ImageSourcePropType;
 
 export function DurianKnowledgeDetailScreen() {
   const { slug } = useLocalSearchParams<{ slug?: string | string[] }>();
   const navigation = useDurianSafeNavigation();
   const articleSlug = Array.isArray(slug) ? slug[0] : slug;
-  const article = useMemo(
+  const localArticle = useMemo(
     () => (articleSlug ? findKnowledgeArticle(articleSlug) : undefined),
     [articleSlug],
   );
+  const [apiArticle, setApiArticle] = useState<KnowledgeArticleDTO | null>(null);
+  const [loadingApi, setLoadingApi] = useState(!localArticle);
   const [viewerVisible, setViewerVisible] = useState(false);
 
-  if (!article) {
+  useEffect(() => {
+    if (localArticle || !articleSlug) return;
+    setLoadingApi(true);
+    fetchKnowledgeArticle(articleSlug)
+      .then((dto) => setApiArticle(dto))
+      .catch(() => setApiArticle(null))
+      .finally(() => setLoadingApi(false));
+  }, [articleSlug, localArticle]);
+
+  if (loadingApi) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ActivityIndicator color={durianTheme.colors.moss} style={{ flex: 1 }} />
+      </SafeAreaView>
+    );
+  }
+
+  if (!localArticle && !apiArticle) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.notFound}>
@@ -43,6 +66,71 @@ export function DurianKnowledgeDetailScreen() {
       </SafeAreaView>
     );
   }
+
+  if (apiArticle && !localArticle) {
+    const coverSource: ImageSourcePropType = apiArticle.coverImage
+      ? { uri: apiArticle.coverImage }
+      : LOCAL_PLACEHOLDER;
+    const paragraphs = apiArticle.content
+      ? apiArticle.content.split(/\n{2,}/).filter(Boolean)
+      : [apiArticle.excerpt];
+    return (
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
+        <View style={styles.topBar}>
+          <Pressable
+            accessibilityLabel="Quay lại"
+            hitSlop={10}
+            onPress={() => navigation.replace("/(main)/knowledge")}
+            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+          >
+            <ArrowLeft color={durianTheme.colors.mossDark} size={21} />
+          </Pressable>
+          <Text numberOfLines={1} style={styles.topBarTitle}>
+            Cẩm nang DurianCare
+          </Text>
+          <View style={styles.topBarSpacer} />
+        </View>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <Image source={coverSource} resizeMode="cover" style={styles.cover} />
+          <View style={styles.articleHeader}>
+            <View style={styles.categoryChip}>
+              <Text style={styles.categoryText}>{apiArticle.category}</Text>
+            </View>
+            <Text style={styles.title}>{apiArticle.title}</Text>
+            <Text style={styles.excerpt}>{apiArticle.excerpt}</Text>
+            <View style={styles.metaRow}>
+              {apiArticle.publishedAt ? (
+                <View style={styles.metaItem}>
+                  <CalendarDays color={durianTheme.colors.moss} size={16} />
+                  <Text style={styles.metaText}>{apiArticle.publishedAt}</Text>
+                </View>
+              ) : null}
+              {apiArticle.readingTime ? (
+                <View style={styles.metaItem}>
+                  <Clock3 color={durianTheme.colors.moss} size={16} />
+                  <Text style={styles.metaText}>{apiArticle.readingTime} phút đọc</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={styles.author}>Biên soạn: {apiArticle.author}</Text>
+          </View>
+          <View style={styles.section}>
+            {paragraphs.map((p, i) => (
+              <Text key={`p-${i}`} style={styles.paragraph}>{p}</Text>
+            ))}
+          </View>
+          <View style={styles.disclaimer}>
+            <Text style={styles.disclaimerText}>
+              Nội dung dùng cho tham khảo kỹ thuật. Phác đồ hóa học cần được kỹ sư phụ trách xác
+              nhận theo tình trạng vườn thực tế.
+            </Text>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  const article = localArticle!;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>

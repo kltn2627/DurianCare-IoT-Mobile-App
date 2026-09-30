@@ -5,10 +5,12 @@ import {
   Droplets,
   Leaf,
   Plus,
+  RefreshCw,
   SprayCan,
 } from "lucide-react-native";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -22,6 +24,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
 import { useSession } from "@/src/session/SessionContext";
 import { durianTheme } from "@/src/theme/durianTheme";
+import {
+  createCultivationSchedule,
+  listCultivationSchedules,
+  updateCultivationScheduleStatus,
+} from "./api/cultivationApi";
+import type { CultivationSchedule } from "./api/cultivationTypes";
 
 type TaskType =
   | "fertilizer"
@@ -45,6 +53,23 @@ type CultivationTask = {
   type: TaskType;
   zoneId: string;
 };
+
+function scheduleToTask(s: CultivationSchedule): CultivationTask {
+  return {
+    assignee: s.assignee,
+    cropId: s.cropId,
+    date: s.date,
+    dosage: s.dosage,
+    id: s.id,
+    materialName: s.materialName,
+    notes: s.notes,
+    safetyInterval: s.safetyInterval,
+    status: s.status,
+    time: s.time.substring(0, 5),
+    type: s.type,
+    zoneId: s.zoneId,
+  };
+}
 
 const taskTypes: Record<TaskType, { icon: typeof Leaf; label: string }> = {
   fertilizer: { icon: Leaf, label: "Rải phân" },
@@ -72,50 +97,6 @@ const cropLots = [
   { id: "DC-2026-RI6-012", label: "Ri6 2026" },
 ];
 
-const initialTasks: CultivationTask[] = [
-  {
-    assignee: "Tổ canh tác 01",
-    cropId: "DC-2026-DONA-018",
-    date: "2026-06-12",
-    dosage: "2.5 kg/cây",
-    id: "CAL-001",
-    materialName: "Phân hữu cơ vi sinh 3-2-2",
-    notes: "Rải theo tán, giữ cách gốc 40 cm, tưới nhẹ sau khi rải.",
-    safetyInterval: "0 ngày",
-    status: "planned",
-    time: "07:30",
-    type: "fertilizer",
-    zoneId: "A1",
-  },
-  {
-    assignee: "KS. Trần Hoàng Nam",
-    cropId: "DC-2026-RI6-012",
-    date: "2026-06-13",
-    dosage: "1.2 lít/ha",
-    id: "CAL-002",
-    materialName: "Bacillus subtilis",
-    notes: "Phun mặt dưới lá vào chiều mát, tránh mưa trong 6 giờ sau phun.",
-    safetyInterval: "7 ngày",
-    status: "done",
-    time: "16:00",
-    type: "pesticide",
-    zoneId: "B2",
-  },
-  {
-    assignee: "Chủ vườn Nguyễn Minh",
-    cropId: "DC-2026-DONA-018",
-    date: "2026-06-14",
-    dosage: "Kiểm tra 12 trạm",
-    id: "CAL-003",
-    materialName: "Độ ẩm đất và áp lực tưới",
-    notes: "Ưu tiên các cây có độ ẩm dưới 72%.",
-    safetyInterval: "Không áp dụng",
-    status: "planned",
-    time: "06:45",
-    type: "inspection",
-    zoneId: "A2",
-  },
-];
 
 const blankTask: Omit<CultivationTask, "id" | "status"> = {
   assignee: "KS. Trần Hoàng Nam",
@@ -151,9 +132,21 @@ function compareTaskTime(left: CultivationTask, right: CultivationTask) {
 
 export function DurianCultivationCalendarScreen() {
   const { session } = useSession();
-  const [tasks, setTasks] = useState(initialTasks);
+  const [tasks, setTasks] = useState<CultivationTask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(blankTask);
   const [showForm, setShowForm] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    listCultivationSchedules()
+      .then((schedules) => setTasks(schedules.map(scheduleToTask)))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const upcomingTasks = useMemo(
     () => tasks.filter((task) => task.status !== "done").sort(compareTaskTime),
@@ -176,6 +169,7 @@ export function DurianCultivationCalendarScreen() {
     setTasks((current) =>
       current.map((task) => (task.id === taskId ? { ...task, status } : task)),
     );
+    updateCultivationScheduleStatus(taskId, status).catch(() => load());
   }
 
   function addTask() {
@@ -197,21 +191,27 @@ export function DurianCultivationCalendarScreen() {
       return;
     }
 
-    setTasks((current) => [
-      {
-        ...draft,
-        dosage: draft.dosage.trim(),
-        id: `CAL-${Date.now()}`,
-        materialName: draft.materialName.trim(),
-        notes: draft.notes.trim() || "Chưa có ghi chú bổ sung.",
-        safetyInterval: draft.safetyInterval.trim() || "Không áp dụng",
-        status: "planned",
-      },
-      ...current,
-    ]);
-
-    setDraft(blankTask);
-    setShowForm(false);
+    setSaving(true);
+    createCultivationSchedule({
+      zoneId: draft.zoneId,
+      cropId: draft.cropId,
+      type: draft.type,
+      scheduledAt: `${draft.date}T${draft.time}:00`,
+      materialName: draft.materialName.trim(),
+      dosage: draft.dosage.trim(),
+      assignee: draft.assignee,
+      safetyInterval: draft.safetyInterval.trim() || "Không áp dụng",
+      notes: draft.notes.trim() || "Chưa có ghi chú bổ sung.",
+    })
+      .then((schedule) => {
+        setTasks((current) => [scheduleToTask(schedule), ...current]);
+        setDraft(blankTask);
+        setShowForm(false);
+      })
+      .catch(() => {
+        Alert.alert("Lỗi", "Không thể lưu lịch canh tác. Vui lòng thử lại.");
+      })
+      .finally(() => setSaving(false));
   }
 
   return (
@@ -223,6 +223,11 @@ export function DurianCultivationCalendarScreen() {
         subtitle="Đồng bộ luồng Web: rải phân, xịt thuốc, liều lượng, cách ly và ghi chú thực địa."
       />
 
+      {loading ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={durianTheme.colors.moss} />
+        </View>
+      ) : null}
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -238,6 +243,9 @@ export function DurianCultivationCalendarScreen() {
             label="Hoàn thành"
             value={String(completedTasks.length)}
           />
+          <Pressable onPress={load} style={styles.refreshButton}>
+            <RefreshCw color={durianTheme.colors.moss} size={16} />
+          </Pressable>
         </View>
 
         <Pressable
@@ -374,9 +382,19 @@ export function DurianCultivationCalendarScreen() {
               value={draft.notes}
             />
 
-            <Pressable onPress={addTask} style={styles.saveButton}>
-              <CalendarCheck color={durianTheme.colors.white} size={19} />
-              <Text style={styles.saveButtonText}>Lưu lịch canh tác</Text>
+            <Pressable
+              disabled={saving}
+              onPress={addTask}
+              style={[styles.saveButton, saving && styles.disabledButton]}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color={durianTheme.colors.white} />
+              ) : (
+                <CalendarCheck color={durianTheme.colors.white} size={19} />
+              )}
+              <Text style={styles.saveButtonText}>
+                {saving ? "Đang lưu..." : "Lưu lịch canh tác"}
+              </Text>
             </Pressable>
           </View>
         ) : null}
@@ -400,9 +418,8 @@ export function DurianCultivationCalendarScreen() {
         )}
 
         <Text style={styles.syncNote}>
-          {session?.user.role === "OWNER" ? "Chủ vườn" : "Kỹ sư"} đang dùng dữ
-          liệu cục bộ trên thiết bị. Khi service lịch canh tác sẵn sàng, màn này
-          có thể đồng bộ sang API /api/cultivation-schedules.
+          {session?.user.role === "OWNER" ? "Chủ vườn" : "Kỹ sư"} — dữ liệu
+          đồng bộ với API /api/cultivation-schedules.
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -545,6 +562,19 @@ function EmptyText({ text }: { text: string }) {
 }
 
 const styles = StyleSheet.create({
+  loadingWrap: {
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  refreshButton: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.surface,
+    borderRadius: 12,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+
   actionRow: {
     alignItems: "center",
     flexDirection: "row",

@@ -1,6 +1,6 @@
 import type { CameraCapturedPicture } from "expo-camera";
 
-const AI_CHAT_PATH = process.env.EXPO_PUBLIC_AI_CHAT_PATH ?? "/api/v1/chat/ai";
+const AI_CHAT_PATH = process.env.EXPO_PUBLIC_AI_CHAT_PATH ?? "/api/v1/chat/ask";
 const EXPERT_MEDIA_PATH =
   process.env.EXPO_PUBLIC_EXPERT_MEDIA_PATH ?? "/api/v1/chat/expert/media";
 const REQUEST_TIMEOUT_MS = 45_000;
@@ -33,6 +33,43 @@ function appendPhoto(formData: FormData, photo: CameraCapturedPicture) {
       uri: photo.uri,
     } as unknown as Blob,
   );
+}
+
+async function postJson(
+  path: string,
+  body: unknown,
+  externalSignal?: AbortSignal,
+): Promise<unknown> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const abort = () => controller.abort();
+  externalSignal?.addEventListener("abort", abort, { once: true });
+
+  try {
+    const response = await fetch(`${getApiBaseUrl()}${path}`, {
+      body: JSON.stringify(body),
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      method: "POST",
+      signal: controller.signal,
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const detail =
+        isRecord(payload) && typeof payload.detail === "string"
+          ? payload.detail
+          : `Dịch vụ phản hồi lỗi HTTP ${response.status}.`;
+      throw new Error(detail);
+    }
+    return payload;
+  } catch (error) {
+    if (controller.signal.aborted && !externalSignal?.aborted) {
+      throw new Error("Dịch vụ tư vấn phản hồi quá thời gian 45 giây.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    externalSignal?.removeEventListener("abort", abort);
+  }
 }
 
 async function postMultipart(
@@ -77,24 +114,27 @@ function unwrapRecord(payload: unknown): UnknownRecord {
   return isRecord(payload.data) ? payload.data : payload;
 }
 
+// photo param kept for API compatibility but /api/v1/chat/ask is text-only
 export async function askDurianAssistant(
   question: string,
   photo?: CameraCapturedPicture | null,
   signal?: AbortSignal,
+  predictedDisease?: string,
 ): Promise<AiAssistantReply> {
-  const formData = new FormData();
-  formData.append("question", question);
-  formData.append("context", "durian-care-mobile");
-  if (photo) appendPhoto(formData, photo);
+  const body: Record<string, string> = { question };
+  if (predictedDisease) body.predicted_disease = predictedDisease;
 
-  const record = unwrapRecord(await postMultipart(AI_CHAT_PATH, formData, signal));
+  const record = unwrapRecord(await postJson(AI_CHAT_PATH, body, signal));
   const answer =
     [record.answer, record.message, record.content, record.response].find(
       (value): value is string => typeof value === "string" && value.trim().length > 0,
     ) ?? "Trợ lý chưa tạo được câu trả lời phù hợp.";
-  const references = Array.isArray(record.references)
-    ? record.references.filter((value): value is string => typeof value === "string")
-    : [];
+  const rawList = Array.isArray(record.sources)
+    ? record.sources
+    : Array.isArray(record.references)
+      ? record.references
+      : [];
+  const references = rawList.filter((value): value is string => typeof value === "string");
 
   return { answer, references };
 }

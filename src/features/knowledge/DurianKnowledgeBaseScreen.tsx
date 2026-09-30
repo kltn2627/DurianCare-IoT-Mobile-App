@@ -6,10 +6,12 @@ import {
   Search,
   UserRound,
 } from "lucide-react-native";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Image,
+  type ImageSourcePropType,
   Pressable,
   StyleSheet,
   Text,
@@ -21,22 +23,78 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
 import { durianTheme } from "@/src/theme/durianTheme";
 
-import { knowledgeArticles, type KnowledgeArticle } from "./knowledgeArticles";
+import { fetchKnowledgeArticles, type KnowledgeArticleDTO } from "./knowledgeApi";
+import { knowledgeArticles } from "./knowledgeArticles";
+
+type DisplayArticle = {
+  id: string;
+  slug: string;
+  title: string;
+  category: string;
+  author: string;
+  excerpt: string;
+  cover: ImageSourcePropType | { uri: string };
+  readMinutes: number;
+  publishedAt: string;
+};
+
+const LOCAL_PLACEHOLDER = require("../../../assets/images/community/leaf-blight.jpg") as ImageSourcePropType;
+
+function toDisplayArticle(dto: KnowledgeArticleDTO): DisplayArticle {
+  return {
+    id: dto.id,
+    slug: dto.slug,
+    title: dto.title,
+    category: dto.category,
+    author: dto.author,
+    excerpt: dto.excerpt,
+    cover: dto.coverImage ? { uri: dto.coverImage } : LOCAL_PLACEHOLDER,
+    readMinutes: dto.readingTime ? parseInt(dto.readingTime, 10) || 5 : 5,
+    publishedAt: dto.publishedAt ?? "",
+  };
+}
 
 export function DurianKnowledgeBaseScreen() {
   const navigation = useDurianSafeNavigation();
   const [query, setQuery] = useState("");
+  const [apiArticles, setApiArticles] = useState<DisplayArticle[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchKnowledgeArticles()
+      .then((list) => setApiArticles(list.map(toDisplayArticle)))
+      .catch(() => {/* fallback to local articles */})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const localDisplayArticles = useMemo(
+    () =>
+      knowledgeArticles.map((a) => ({
+        id: a.id,
+        slug: a.slug,
+        title: a.title,
+        category: a.category,
+        author: a.author,
+        excerpt: a.excerpt,
+        cover: a.cover as ImageSourcePropType,
+        readMinutes: a.readMinutes,
+        publishedAt: a.publishedAt,
+      })),
+    [],
+  );
+
+  const allArticles = apiArticles.length > 0 ? apiArticles : localDisplayArticles;
 
   const filteredArticles = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("vi-VN");
-    if (!normalizedQuery) return knowledgeArticles;
-    return knowledgeArticles.filter((article) =>
+    if (!normalizedQuery) return allArticles;
+    return allArticles.filter((article) =>
       [article.title, article.category, article.author, article.excerpt]
         .join(" ")
         .toLocaleLowerCase("vi-VN")
         .includes(normalizedQuery),
     );
-  }, [query]);
+  }, [query, allArticles]);
 
   const openArticle = useCallback(
     (slug: string) => navigation.push(`/(main)/knowledge/${slug}`),
@@ -44,7 +102,7 @@ export function DurianKnowledgeBaseScreen() {
   );
 
   const renderArticle = useCallback(
-    ({ item }: { item: KnowledgeArticle }) => (
+    ({ item }: { item: DisplayArticle }) => (
       <ArticleCard article={item} onPress={() => openArticle(item.slug)} />
     ),
     [openArticle],
@@ -58,11 +116,15 @@ export function DurianKnowledgeBaseScreen() {
         keyExtractor={(item) => item.id}
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Leaf color={durianTheme.colors.moss} size={34} />
-            <Text style={styles.emptyTitle}>Chưa tìm thấy cẩm nang phù hợp</Text>
-            <Text style={styles.emptyText}>Thử tìm theo bệnh lá, VietGAP hoặc dinh dưỡng.</Text>
-          </View>
+          loading ? (
+            <ActivityIndicator color={durianTheme.colors.moss} style={styles.loader} />
+          ) : (
+            <View style={styles.emptyState}>
+              <Leaf color={durianTheme.colors.moss} size={34} />
+              <Text style={styles.emptyTitle}>Chưa tìm thấy cẩm nang phù hợp</Text>
+              <Text style={styles.emptyText}>Thử tìm theo bệnh lá, VietGAP hoặc dinh dưỡng.</Text>
+            </View>
+          )
         }
         ListHeaderComponent={
           <View style={styles.header}>
@@ -104,7 +166,7 @@ function ArticleCard({
   article,
   onPress,
 }: {
-  article: KnowledgeArticle;
+  article: DisplayArticle;
   onPress: () => void;
 }) {
   return (
@@ -182,6 +244,7 @@ const styles = StyleSheet.create({
   },
   content: { gap: 14, paddingBottom: 42 },
   cover: { height: 190, width: "100%" },
+  loader: { paddingVertical: 42 },
   emptyState: {
     alignItems: "center",
     gap: 7,

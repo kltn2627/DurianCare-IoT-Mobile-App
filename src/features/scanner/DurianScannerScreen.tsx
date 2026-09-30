@@ -1,10 +1,12 @@
 import { CameraView } from "expo-camera";
+import { useLocalSearchParams } from "expo-router";
 import {
   Camera,
   CheckCircle2,
   Focus,
   ImagePlus,
   History,
+  Leaf,
   MessageCircleWarning,
   RefreshCw,
   RotateCcw,
@@ -31,12 +33,16 @@ import { durianTheme } from "@/src/theme/durianTheme";
 import { useWorkspace } from "@/src/workspace/WorkspaceContext";
 
 import { saveDiagnosisHistoryEntry } from "@/src/features/diagnosis/diagnosisHistoryStore";
+import { saveDiagnosis } from "@/src/features/trees/treeApi";
 
 import { useDurianDiseaseCamera } from "./useDurianDiseaseCamera";
+import { getDiseaseAlertMessage } from "./diseaseCatalog";
 
 export function DurianScannerScreen() {
   const navigation = useDurianSafeNavigation();
   const { pushScanAlert } = useWorkspace();
+  // Optional treeId/treeCode from URL: /scanner?treeId=X&treeCode=DC-T042 — set when navigating from TreeDetailScreen
+  const { treeId, treeCode } = useLocalSearchParams<{ treeId?: string; treeCode?: string }>();
   const {
     cameraRef,
     captureAndAnalyze,
@@ -54,6 +60,8 @@ export function DurianScannerScreen() {
   const [wasPushed, setWasPushed] = useState(false);
   const [historyEntryId, setHistoryEntryId] = useState<string | null>(null);
   const lastSavedSignatureRef = useRef<string | null>(null);
+  const [treeSaveState, setTreeSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [treeSaveError, setTreeSaveError] = useState<string | null>(null);
 
   useEffect(
     function animateStateChange() {
@@ -85,7 +93,31 @@ export function DurianScannerScreen() {
     setWasPushed(false);
     setHistoryEntryId(null);
     lastSavedSignatureRef.current = null;
+    setTreeSaveState("idle");
+    setTreeSaveError(null);
     reset();
+  }
+
+  async function handleSaveToTree() {
+    if (!treeId || !prediction || !photo) return;
+    setTreeSaveState("saving");
+    setTreeSaveError(null);
+    try {
+      // Normalize disease code to uppercase for backend consistency (e.g. "Algal_Leaf_Spot" → "ALGAL_LEAF_SPOT")
+      const diseaseCode = prediction.disease.code.toUpperCase().replace(/-/g, "_");
+      await saveDiagnosis(treeId, {
+        imageUrl: photo.uri,
+        diseaseCode,
+        diseaseName: prediction.disease.name,
+        confidence: prediction.confidence / 100, // convert % back to 0-1 float
+        boundingBox: prediction.boundingBox as unknown as Record<string, unknown>,
+        source: "MOBILE",
+      });
+      setTreeSaveState("saved");
+    } catch (err) {
+      setTreeSaveState("error");
+      setTreeSaveError(err instanceof Error ? err.message : "Không thể lưu chuẩn đoán.");
+    }
   }
 
   function handlePushToChat() {
@@ -190,7 +222,7 @@ export function DurianScannerScreen() {
                 {phase === "capturing" ? "Đang xử lý ảnh chụp" : "AI đang đọc tổn thương"}
               </Text>
               <Text style={styles.loadingText}>
-                Đang truyền ảnh an toàn đến `/api/v1/predict-disease`
+                Đang truyền ảnh an toàn đến dịch vụ AI
               </Text>
             </View>
           ) : null}
@@ -236,6 +268,13 @@ export function DurianScannerScreen() {
 
         {prediction ? (
           <View style={styles.resultCard}>
+            {/* Tree context chip — shown when navigating from a tree */}
+            {treeCode ? (
+              <View style={styles.treeContextBadge}>
+                <Text style={styles.treeContextText}>🌳 Cây: {treeCode}</Text>
+              </View>
+            ) : null}
+
             <View style={styles.resultHeading}>
               <View style={styles.resultIcon}>
                 <CheckCircle2 color={durianTheme.colors.moss} size={25} />
@@ -247,6 +286,23 @@ export function DurianScannerScreen() {
               <View style={styles.confidenceChip}>
                 <Text style={styles.confidence}>{prediction.confidence}%</Text>
               </View>
+            </View>
+
+            {/* Category-based alert message */}
+            <View style={[
+              styles.categoryAlert,
+              prediction.disease.category === "HEALTHY" && styles.categoryAlertHealthy,
+              prediction.disease.category === "PEST" && styles.categoryAlertPest,
+              prediction.disease.category === "DISEASE" && styles.categoryAlertDisease,
+            ]}>
+              <Text style={[
+                styles.categoryAlertText,
+                prediction.disease.category === "HEALTHY" && styles.categoryAlertTextHealthy,
+                prediction.disease.category === "PEST" && styles.categoryAlertTextPest,
+                prediction.disease.category === "DISEASE" && styles.categoryAlertTextDisease,
+              ]}>
+                {getDiseaseAlertMessage(prediction.disease.category)}
+              </Text>
             </View>
 
             <View style={styles.resultDivider} />
@@ -281,6 +337,45 @@ export function DurianScannerScreen() {
             >
               <Text style={styles.resultButtonText}>Mở màn hình kết quả</Text>
             </Pressable>
+
+            {/* Save to tree — shown only when navigated from TreeDetailScreen with treeId */}
+            {treeId ? (
+              treeSaveState === "saved" ? (
+                <View style={styles.treeSavedBadge}>
+                  <CheckCircle2 color="#059669" size={14} />
+                  <Text style={styles.treeSavedText}>
+                    {treeCode ? `Đã lưu kết quả cho cây ${treeCode}` : "Đã lưu vào hồ sơ cây"}
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <Pressable
+                    disabled={treeSaveState === "saving"}
+                    hitSlop={6}
+                    onPress={() => { void handleSaveToTree(); }}
+                    style={({ pressed }) => [
+                      styles.treeSaveButton,
+                      treeSaveState === "saving" && styles.disabledButton,
+                      pressed && styles.pressedButton,
+                    ]}
+                  >
+                    {treeSaveState === "saving" ? (
+                      <ActivityIndicator color={durianTheme.colors.white} size="small" />
+                    ) : (
+                      <Leaf color={durianTheme.colors.white} size={15} />
+                    )}
+                    <Text style={styles.treeSaveButtonText}>
+                      {treeSaveState === "saving"
+                        ? "Đang lưu..."
+                        : treeCode ? `Lưu vào hồ sơ cây ${treeCode}` : "Lưu vào hồ sơ cây"}
+                    </Text>
+                  </Pressable>
+                  {treeSaveState === "error" && treeSaveError ? (
+                    <Text style={styles.treeSaveError}>{treeSaveError}</Text>
+                  ) : null}
+                </>
+              )
+            ) : null}
           </View>
         ) : null}
 
@@ -637,6 +732,74 @@ const styles = StyleSheet.create({
     lineHeight: 25,
   },
   pressedButton: { transform: [{ scale: 0.98 }] },
+  treeContextBadge: {
+    alignSelf: "flex-start" as const,
+    backgroundColor: "#f0f6f0",
+    borderColor: "#d0dbd0",
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  treeContextText: {
+    color: "#2E5A44",
+    fontSize: 12,
+    fontWeight: "700" as const,
+  },
+  categoryAlert: {
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 4,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  categoryAlertHealthy: { backgroundColor: "#f0fdf4", borderColor: "#bbf7d0" },
+  categoryAlertPest: { backgroundColor: "#fffbeb", borderColor: "#fde68a" },
+  categoryAlertDisease: { backgroundColor: "#fef2f2", borderColor: "#fecaca" },
+  categoryAlertText: { fontSize: 12, fontWeight: "600" as const, lineHeight: 17 },
+  categoryAlertTextHealthy: { color: "#15803d" },
+  categoryAlertTextPest: { color: "#92400e" },
+  categoryAlertTextDisease: { color: "#b91c1c" },
+  treeSaveButton: {
+    alignItems: "center" as const,
+    backgroundColor: "#1a4732",
+    borderRadius: 14,
+    flexDirection: "row" as const,
+    gap: 8,
+    justifyContent: "center" as const,
+    minHeight: 46,
+    paddingHorizontal: 16,
+  },
+  treeSaveButtonText: {
+    color: durianTheme.colors.white,
+    fontSize: 13,
+    fontWeight: "900" as const,
+    lineHeight: 18,
+  },
+  treeSavedBadge: {
+    alignItems: "center" as const,
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row" as const,
+    gap: 8,
+    justifyContent: "center" as const,
+    minHeight: 40,
+    paddingHorizontal: 14,
+  },
+  treeSavedText: {
+    color: "#059669",
+    fontSize: 13,
+    fontWeight: "700" as const,
+  },
+  treeSaveError: {
+    color: durianTheme.colors.danger,
+    fontSize: 12,
+    textAlign: "center" as const,
+  },
   primaryButton: {
     alignItems: "center",
     backgroundColor: durianTheme.colors.durianYellow,
