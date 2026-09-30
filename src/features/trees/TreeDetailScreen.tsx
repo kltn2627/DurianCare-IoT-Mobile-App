@@ -57,31 +57,42 @@ const CATEGORY_DOT: Record<DiseaseCategory, string> = {
   HEALTHY: "#16a34a",
   DISEASE: "#dc2626",
   PEST: "#f59e0b",
+  LOW_CONFIDENCE: "#9ca3af",
+  INVALID_IMAGE: "#6b7280",
 };
 
 const CATEGORY_BADGE_TEXT: Record<DiseaseCategory, string> = {
   HEALTHY: "#15803d",
   DISEASE: "#b91c1c",
   PEST: "#92400e",
+  LOW_CONFIDENCE: "#374151",
+  INVALID_IMAGE: "#374151",
 };
 
 const CATEGORY_BADGE_BG: Record<DiseaseCategory, string> = {
   HEALTHY: "#dcfce7",
   DISEASE: "#fee2e2",
   PEST: "#fef3c7",
+  LOW_CONFIDENCE: "#f3f4f6",
+  INVALID_IMAGE: "#f3f4f6",
 };
 
 const CATEGORY_LABEL: Record<DiseaseCategory, string> = {
   HEALTHY: "Khỏe",
   DISEASE: "Bệnh",
   PEST: "Sâu/Bọ",
+  LOW_CONFIDENCE: "Thấp tin cậy",
+  INVALID_IMAGE: "Ảnh không hợp lệ",
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function categoryFromCode(code: string | null | undefined): DiseaseCategory {
-  if (!code) return "DISEASE";
+  if (!code) return "INVALID_IMAGE";
   const lower = code.toLowerCase();
+  if (lower === "low_confidence") return "LOW_CONFIDENCE";
+  if (lower === "invalid_image") return "INVALID_IMAGE";
+  if (lower === "recovered_by_farmer") return "HEALTHY";
   if (lower.includes("healthy")) return "HEALTHY";
   if (lower.includes("allocaridara")) return "PEST";
   return "DISEASE";
@@ -361,8 +372,8 @@ function RecoveryPanel({ treeId, treeCode, onSaved }: RecoveryPanelProps) {
     try {
       await saveDiagnosis(treeId, {
         imageUrl: "RECOVERY_VERIFICATION_NO_IMAGE",
-        diseaseCode: "HEALTHY_LEAF",
-        diseaseName: "Lá khỏe mạnh",
+        diseaseCode: "RECOVERED_BY_FARMER",
+        diseaseName: "Phục hồi (xác nhận bởi nông dân)",
         confidence: null,
         boundingBox: null,
         source: "RECOVERY_VERIFICATION",
@@ -439,13 +450,14 @@ function RecoveryPanel({ treeId, treeCode, onSaved }: RecoveryPanelProps) {
   );
 }
 
-// ── Main screen ───────────────────────────────────────────────────────────────
+// ── TreeDetailContent — reusable (used by screen and by inline sheet) ─────────
 
-interface Props {
+interface ContentProps {
   treeId: string;
+  onClose?: () => void;
 }
 
-export function TreeDetailScreen({ treeId }: Props) {
+export function TreeDetailContent({ treeId, onClose }: ContentProps) {
   const [tree, setTree] = useState<TreeDetail | null>(null);
   const [diagnoses, setDiagnoses] = useState<TreeDiagnosis[]>([]);
   const [loading, setLoading] = useState(true);
@@ -471,9 +483,8 @@ export function TreeDetailScreen({ treeId }: Props) {
   useEffect(() => {
     const active = { value: true };
     load(active);
-    return () => {
-      active.value = false;
-    };
+    return () => { active.value = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [treeId]);
 
   function refresh() {
@@ -485,115 +496,145 @@ export function TreeDetailScreen({ treeId }: Props) {
   const needsRecovery =
     health === "DISEASED" || health === "TREATING" || health === "SUSPECTED";
 
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={durianTheme.colors.moss} />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.errorBox}>
+        <Text style={styles.errorText}>{error}</Text>
+      </View>
+    );
+  }
+
+  if (!tree) return null;
+
+  return (
+    <ScrollView contentContainerStyle={styles.scrollContent}>
+      {/* Sheet drag handle (only shown when used as bottom sheet) */}
+      {onClose != null ? (
+        <View style={styles.sheetHandle}>
+          <View style={styles.sheetHandleBar} />
+          <View style={styles.sheetTitleRow}>
+            <Text style={styles.sheetTitle}>{tree.treeCode}</Text>
+            <Pressable onPress={onClose} style={styles.sheetCloseBtn}>
+              <Text style={styles.sheetCloseText}>✕</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
+      {/* Health badge */}
+      {health ? (
+        <View style={[styles.healthBadge, { backgroundColor: HEALTH_BG[health] ?? "#f3f4f6" }]}>
+          <Text style={[styles.healthBadgeText, { color: HEALTH_COLORS[health] ?? "#374151" }]}>
+            {HEALTH_LABELS[health] ?? health}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Recovery confirmation panel — only for sick/treating trees */}
+      {needsRecovery ? (
+        <RecoveryPanel treeId={treeId} treeCode={tree.treeCode} onSaved={refresh} />
+      ) : null}
+
+      {/* Embedded AI diagnosis panel */}
+      <AIPanel treeId={treeId} treeCode={tree.treeCode} onSaved={refresh} />
+
+      {/* Tree info */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Thông tin cây</Text>
+        <InfoRow label="Mã cây" value={tree.treeCode} />
+        <InfoRow label="Biệt danh" value={tree.nickname} />
+        <InfoRow label="Giống" value={tree.variety} />
+        <InfoRow label="Ngày trồng" value={tree.plantedDate} />
+        <InfoRow label="Vị trí X" value={tree.positionX?.toFixed(4)} />
+        <InfoRow label="Vị trí Y" value={tree.positionY?.toFixed(4)} />
+        <InfoRow label="Số lần chuẩn đoán" value={tree.diagnosisCount} />
+        {tree.latestDiagnosisAt ? (
+          <InfoRow
+            label="Lần cuối chuẩn đoán"
+            value={new Date(tree.latestDiagnosisAt).toLocaleString("vi-VN")}
+          />
+        ) : null}
+        {tree.notes ? (
+          <View style={styles.notesBox}>
+            <Text style={styles.infoLabel}>Ghi chú</Text>
+            <Text style={styles.notesText}>{tree.notes}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      {/* Diagnosis timeline */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Lịch sử chuẩn đoán ({diagnoses.length})</Text>
+        {diagnoses.length === 0 ? (
+          <Text style={styles.emptyText}>Chưa có lịch sử chuẩn đoán.</Text>
+        ) : (
+          <View style={styles.timeline}>
+            {diagnoses.map((d, idx) => {
+              const cat = categoryFromCode(d.diseaseCode);
+              const dotColor = CATEGORY_DOT[cat];
+              const isLast = idx === diagnoses.length - 1;
+              return (
+                <View key={d.id} style={styles.timelineRow}>
+                  <View style={styles.timelineSpine}>
+                    <View style={[styles.timelineDot, { backgroundColor: dotColor }]} />
+                    {!isLast ? <View style={styles.timelineLine} /> : null}
+                  </View>
+                  <View style={[styles.diagRow, { flex: 1, marginLeft: 10, marginBottom: isLast ? 0 : 10 }]}>
+                    <View style={styles.diagRowHeader}>
+                      <View style={[styles.catBadge, { backgroundColor: CATEGORY_BADGE_BG[cat] }]}>
+                        <Text style={[styles.catBadgeText, { color: CATEGORY_BADGE_TEXT[cat] }]}>
+                          {CATEGORY_LABEL[cat]}
+                        </Text>
+                      </View>
+                      {d.confidence != null ? (
+                        <Text style={styles.diagConf}>{Math.round(d.confidence * 100)}%</Text>
+                      ) : null}
+                    </View>
+                    <Text style={styles.diagCode}>{d.diseaseCode}</Text>
+                    {d.diseaseName ? (
+                      <Text style={styles.diagName}>{d.diseaseName}</Text>
+                    ) : null}
+                    <Text style={styles.diagDate}>
+                      {new Date(d.diagnosedAt).toLocaleString("vi-VN")}
+                    </Text>
+                    {d.source ? (
+                      <Text style={styles.diagSource}>{d.source}</Text>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
+    </ScrollView>
+  );
+}
+
+// ── Standalone screen wrapper ─────────────────────────────────────────────────
+
+interface Props {
+  treeId: string;
+}
+
+export function TreeDetailScreen({ treeId }: Props) {
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       <DurianScreenHeader
         eyebrow="CHI TIẾT CÂY"
         icon={Leaf}
-        title={loading ? "Đang tải..." : tree?.treeCode ?? "Chi tiết cây"}
-        subtitle={tree?.nickname ?? "Thông tin và lịch sử chuẩn đoán"}
+        title="Chi tiết cây"
+        subtitle="Thông tin và lịch sử chuẩn đoán"
       />
-
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={durianTheme.colors.moss} />
-        </View>
-      ) : error ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      ) : tree ? (
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          {/* Health badge */}
-          {health ? (
-            <View style={[styles.healthBadge, { backgroundColor: HEALTH_BG[health] ?? "#f3f4f6" }]}>
-              <Text style={[styles.healthBadgeText, { color: HEALTH_COLORS[health] ?? "#374151" }]}>
-                {HEALTH_LABELS[health] ?? health}
-              </Text>
-            </View>
-          ) : null}
-
-          {/* Recovery confirmation panel — only for sick/treating trees */}
-          {needsRecovery ? (
-            <RecoveryPanel treeId={treeId} treeCode={tree.treeCode} onSaved={refresh} />
-          ) : null}
-
-          {/* Embedded AI diagnosis panel */}
-          <AIPanel treeId={treeId} treeCode={tree.treeCode} onSaved={refresh} />
-
-          {/* Tree info */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Thông tin cây</Text>
-            <InfoRow label="Mã cây" value={tree.treeCode} />
-            <InfoRow label="Biệt danh" value={tree.nickname} />
-            <InfoRow label="Giống" value={tree.variety} />
-            <InfoRow label="Ngày trồng" value={tree.plantedDate} />
-            <InfoRow label="Vị trí X" value={tree.positionX?.toFixed(4)} />
-            <InfoRow label="Vị trí Y" value={tree.positionY?.toFixed(4)} />
-            <InfoRow label="Số lần chuẩn đoán" value={tree.diagnosisCount} />
-            {tree.latestDiagnosisAt ? (
-              <InfoRow
-                label="Lần cuối chuẩn đoán"
-                value={new Date(tree.latestDiagnosisAt).toLocaleString("vi-VN")}
-              />
-            ) : null}
-            {tree.notes ? (
-              <View style={styles.notesBox}>
-                <Text style={styles.infoLabel}>Ghi chú</Text>
-                <Text style={styles.notesText}>{tree.notes}</Text>
-              </View>
-            ) : null}
-          </View>
-
-          {/* Diagnosis timeline */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Lịch sử chuẩn đoán ({diagnoses.length})</Text>
-            {diagnoses.length === 0 ? (
-              <Text style={styles.emptyText}>Chưa có lịch sử chuẩn đoán.</Text>
-            ) : (
-              <View style={styles.timeline}>
-                {diagnoses.map((d, idx) => {
-                  const cat = categoryFromCode(d.diseaseCode);
-                  const dotColor = CATEGORY_DOT[cat];
-                  const isLast = idx === diagnoses.length - 1;
-                  return (
-                    <View key={d.id} style={styles.timelineRow}>
-                      {/* Left spine */}
-                      <View style={styles.timelineSpine}>
-                        <View style={[styles.timelineDot, { backgroundColor: dotColor }]} />
-                        {!isLast ? <View style={styles.timelineLine} /> : null}
-                      </View>
-                      {/* Content */}
-                      <View style={[styles.diagRow, { flex: 1, marginLeft: 10, marginBottom: isLast ? 0 : 10 }]}>
-                        <View style={styles.diagRowHeader}>
-                          <View style={[styles.catBadge, { backgroundColor: CATEGORY_BADGE_BG[cat] }]}>
-                            <Text style={[styles.catBadgeText, { color: CATEGORY_BADGE_TEXT[cat] }]}>
-                              {CATEGORY_LABEL[cat]}
-                            </Text>
-                          </View>
-                          {d.confidence != null ? (
-                            <Text style={styles.diagConf}>{Math.round(d.confidence * 100)}%</Text>
-                          ) : null}
-                        </View>
-                        <Text style={styles.diagCode}>{d.diseaseCode}</Text>
-                        {d.diseaseName ? (
-                          <Text style={styles.diagName}>{d.diseaseName}</Text>
-                        ) : null}
-                        <Text style={styles.diagDate}>
-                          {new Date(d.diagnosedAt).toLocaleString("vi-VN")}
-                        </Text>
-                        {d.source ? (
-                          <Text style={styles.diagSource}>{d.source}</Text>
-                        ) : null}
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-        </ScrollView>
-      ) : null}
+      <TreeDetailContent treeId={treeId} />
     </SafeAreaView>
   );
 }
@@ -602,8 +643,15 @@ export function TreeDetailScreen({ treeId }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: durianTheme.colors.canvas },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  scrollContent: { padding: 16, gap: 12 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
+  scrollContent: { padding: 16, gap: 12, paddingBottom: 40 },
+
+  sheetHandle: { alignItems: "center", paddingBottom: 4, gap: 8 },
+  sheetHandleBar: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#d1d5db", marginTop: 4 },
+  sheetTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", width: "100%", paddingHorizontal: 4 },
+  sheetTitle: { fontSize: 17, fontWeight: "800", color: durianTheme.colors.ink },
+  sheetCloseBtn: { padding: 6 },
+  sheetCloseText: { fontSize: 16, color: durianTheme.colors.muted, fontWeight: "700" },
   errorBox: {
     margin: 16,
     padding: 14,

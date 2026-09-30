@@ -1,4 +1,4 @@
-export type DiseaseCategory = "HEALTHY" | "PEST" | "DISEASE";
+export type DiseaseCategory = "HEALTHY" | "PEST" | "DISEASE" | "LOW_CONFIDENCE" | "INVALID_IMAGE";
 
 export type DurianDisease = {
   code:
@@ -48,5 +48,7 @@ export const durianDiseaseCatalog: DurianDisease[] = [
 export function getDiseaseAlertMessage(category: DiseaseCategory): string {
   if (category === "HEALTHY") return "Chưa phát hiện dấu hiệu bất thường trên lá.";
   if (category === "PEST") return "⚠️ Phát hiện dấu hiệu sâu/bọ gây hại trên lá. Vui lòng kiểm tra cây.";
+  if (category === "LOW_CONFIDENCE") return "Độ tin cậy thấp — vui lòng chụp lại ảnh lá rõ hơn để có kết quả chính xác.";
+  if (category === "INVALID_IMAGE") return "Ảnh không hợp lệ — vui lòng chụp đúng lá cây sầu riêng, đủ sáng và rõ nét.";
   return "Phát hiện dấu hiệu bệnh trên lá.";
 }
