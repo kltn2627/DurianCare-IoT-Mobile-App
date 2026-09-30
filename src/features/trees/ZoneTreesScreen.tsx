@@ -400,6 +400,10 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
                   <TreeDetailContent
                     treeId={sheetTreeId}
                     onClose={() => setSheetTreeId(null)}
+                    onDiagnosisSaved={() => {
+                      listTrees(zoneId).then(setTrees).catch(() => {});
+                      getZoneSafety(zoneId).then((s) => { if (s) setSafety(s); }).catch(() => {});
+                    }}
                   />
                 ) : null}
               </View>
