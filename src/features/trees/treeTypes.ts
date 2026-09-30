@@ -20,6 +20,38 @@ export interface ZoneSummary {
   areaSquareMeters?: number | null;
   status?: string | null;
   treeCount: number;
+  rowCount?: number | null;
+  treesPerRow?: number | null;
+}
+
+export interface CreateFarmRequest {
+  name: string;
+  province?: string | null;
+  district?: string | null;
+  areaHectares?: number | null;
+}
+
+export interface CreateZoneRequest {
+  name: string;
+  code?: string | null;
+  rowCount?: number | null;
+  treesPerRow?: number | null;
+  description?: string | null;
+}
+
+export interface GenerateTreesRequest {
+  rows: number;
+  treesPerRow: number;
+  variety?: string | null;
+  plantedDate?: string | null;
+  notes?: string | null;
+}
+
+export interface GenerateTreesResult {
+  zoneId: string;
+  generated: number;
+  skipped: number;
+  treeCodePrefix: string;
 }
 
 export interface ZoneDetail extends ZoneSummary {

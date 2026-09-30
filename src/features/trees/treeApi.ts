@@ -1,6 +1,10 @@
 import { authorizedRequest } from "@/src/features/auth/authApi";
 import type {
+  CreateFarmRequest,
+  CreateZoneRequest,
   FarmSummary,
+  GenerateTreesRequest,
+  GenerateTreesResult,
   PagedResponse,
   TreeDetail,
   TreeDiagnosis,
@@ -9,6 +13,39 @@ import type {
   ZoneSafetySummary,
   ZoneSummary,
 } from "./treeTypes";
+
+export async function createFarm(body: CreateFarmRequest): Promise<FarmSummary> {
+  const res = await authorizedRequest<FarmSummary>({
+    method: "POST",
+    url: "/api/v1/farms",
+    data: body,
+  });
+  return res.data;
+}
+
+export async function createZone(
+  farmId: string,
+  body: CreateZoneRequest,
+): Promise<ZoneSummary> {
+  const res = await authorizedRequest<ZoneSummary>({
+    method: "POST",
+    url: `/api/v1/farms/${encodeURIComponent(farmId)}/zones`,
+    data: body,
+  });
+  return res.data;
+}
+
+export async function generateTrees(
+  zoneId: string,
+  body: GenerateTreesRequest,
+): Promise<GenerateTreesResult> {
+  const res = await authorizedRequest<GenerateTreesResult>({
+    method: "POST",
+    url: `/api/zones/${encodeURIComponent(zoneId)}/trees/generate`,
+    data: body,
+  });
+  return res.data;
+}
 
 export async function listFarms(): Promise<FarmSummary[]> {
   const res = await authorizedRequest<FarmSummary[]>({
