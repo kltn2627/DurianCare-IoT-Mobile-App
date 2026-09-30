@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
-  FlatList,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,14 +10,15 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
 import Svg, { Circle, Line, Text as SvgText } from "react-native-svg";
+// farmId prop kept for potential future use (e.g. back navigation)
 
 import { TreePine as TreePineIcon } from "lucide-react-native";
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
 import { durianTheme } from "@/src/theme/durianTheme";
 import { getZone, listTrees, getZoneSafety } from "./treeApi";
 import type { TreeSummary, ZoneDetail, ZoneSafetySummary } from "./treeTypes";
+import { TreeDetailContent } from "./TreeDetailScreen";
 
 const HEALTH_COLORS: Record<string, string> = {
   HEALTHY: "#22c55e",
@@ -169,12 +170,12 @@ interface Props {
   zoneId: string;
 }
 
-export function ZoneTreesScreen({ farmId, zoneId }: Props) {
-  const router = useRouter();
+export function ZoneTreesScreen({ farmId: _farmId, zoneId }: Props) {
   const [zone, setZone] = useState<ZoneDetail | null>(null);
   const [trees, setTrees] = useState<TreeSummary[]>([]);
   const [safety, setSafety] = useState<ZoneSafetySummary | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sheetTreeId, setSheetTreeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -253,16 +254,11 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
             onSelect={(id) => setSelectedId(id === selectedId ? null : id)}
           />
 
-          {/* Selected tree quick info */}
+          {/* Selected tree quick info — tap to open inline sheet */}
           {selectedTree ? (
             <Pressable
               style={styles.selectedTreeCard}
-              onPress={() =>
-                router.push({
-                  pathname: "/(main)/trees/[treeId]",
-                  params: { treeId: selectedTree.id },
-                })
-              }
+              onPress={() => setSheetTreeId(selectedTree.id)}
             >
               <View style={styles.selectedTreeHeader}>
                 <View>
@@ -289,9 +285,29 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
                   </View>
                 ) : null}
               </View>
-              <Text style={styles.viewDetail}>Nhấn để xem chi tiết →</Text>
+              <Text style={styles.viewDetail}>Nhấn để xem chi tiết & chẩn đoán AI →</Text>
             </Pressable>
           ) : null}
+
+          {/* Inline Tree Detail bottom sheet */}
+          <Modal
+            visible={sheetTreeId != null}
+            animationType="slide"
+            transparent
+            onRequestClose={() => setSheetTreeId(null)}
+          >
+            <View style={styles.sheetOverlay}>
+              <Pressable style={styles.sheetBackdrop} onPress={() => setSheetTreeId(null)} />
+              <View style={styles.sheetContainer}>
+                {sheetTreeId ? (
+                  <TreeDetailContent
+                    treeId={sheetTreeId}
+                    onClose={() => setSheetTreeId(null)}
+                  />
+                ) : null}
+              </View>
+            </View>
+          </Modal>
 
           {/* Tree list */}
           <View style={styles.section}>
@@ -309,12 +325,7 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
                   onPress={() => {
                     setSelectedId(tree.id === selectedId ? null : tree.id);
                   }}
-                  onLongPress={() =>
-                    router.push({
-                      pathname: "/(main)/trees/[treeId]",
-                      params: { treeId: tree.id },
-                    })
-                  }
+                  onLongPress={() => setSheetTreeId(tree.id)}
                 >
                   <View style={styles.treeRowLeft}>
                     <View
@@ -471,6 +482,17 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: durianTheme.colors.ink,
     marginBottom: 4,
+  },
+
+  // Inline tree detail sheet
+  sheetOverlay: { flex: 1, justifyContent: "flex-end" },
+  sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
+  sheetContainer: {
+    backgroundColor: durianTheme.colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "85%",
+    overflow: "hidden",
   },
 
   // Tree rows

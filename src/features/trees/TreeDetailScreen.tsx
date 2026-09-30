@@ -1,4 +1,5 @@
 import * as ImagePicker from "expo-image-picker";
+import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -28,6 +29,8 @@ import type { DiseaseCategory } from "@/src/features/scanner/diseaseCatalog";
 import { getDiseaseAlertMessage } from "@/src/features/scanner/diseaseCatalog";
 import { getTree, listDiagnoses, saveDiagnosis } from "./treeApi";
 import type { TreeDetail, TreeDiagnosis } from "./treeTypes";
+import { knowledgeApi } from "@/src/features/knowledge/knowledgeApi";
+import type { KnowledgeArticle } from "@/src/features/knowledge/knowledgeTypes";
 
 // ── Health display ────────────────────────────────────────────────────────────
 
@@ -118,6 +121,7 @@ interface AIPanelProps {
 }
 
 function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [photo, setPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [predicting, setPredicting] = useState(false);
@@ -125,7 +129,21 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
   const [predError, setPredError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
+  const [kbArticles, setKbArticles] = useState<KnowledgeArticle[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!prediction || prediction.disease.category === "HEALTHY"
+        || prediction.disease.category === "LOW_CONFIDENCE"
+        || prediction.disease.category === "INVALID_IMAGE") {
+      setKbArticles([]);
+      return;
+    }
+    knowledgeApi
+      .list({ search: prediction.disease.name, size: 2, status: "PUBLISHED" })
+      .then((page) => setKbArticles(page.articles))
+      .catch(() => setKbArticles([]));
+  }, [prediction]);
 
   function reset() {
     setPhoto(null);
@@ -299,6 +317,22 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
               <Text style={styles.resultDisease}>{prediction.disease.name}</Text>
               <Text style={styles.resultCode}>{prediction.disease.code}</Text>
               <Text style={styles.resultNote}>{getDiseaseAlertMessage(cat!)}</Text>
+              {/* KB article links */}
+              {kbArticles.length > 0 ? (
+                <View style={styles.kbSection}>
+                  <Text style={styles.kbSectionTitle}>Tìm hiểu thêm</Text>
+                  {kbArticles.map((a) => (
+                    <Pressable
+                      key={a.id}
+                      onPress={() => router.push({ pathname: "/(main)/knowledge/[slug]", params: { slug: a.slug } } as never)}
+                      style={styles.kbCard}
+                    >
+                      <Text style={styles.kbCardTitle} numberOfLines={2}>{a.title}</Text>
+                      <Text style={styles.kbCardExcerpt} numberOfLines={2}>{a.excerpt}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -810,4 +844,17 @@ const styles = StyleSheet.create({
   diagName: { fontSize: 12, color: durianTheme.colors.muted },
   diagDate: { fontSize: 11, color: "#9ca3af" },
   diagSource: { fontSize: 10, color: "#d1d5db", fontStyle: "italic" },
+
+  kbSection: { marginTop: 8, gap: 6 },
+  kbSectionTitle: { fontSize: 11, fontWeight: "800", color: durianTheme.colors.muted, textTransform: "uppercase", letterSpacing: 0.8 },
+  kbCard: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: durianTheme.colors.mist,
+    backgroundColor: durianTheme.colors.canvas,
+    padding: 8,
+    gap: 3,
+  },
+  kbCardTitle: { fontSize: 12, fontWeight: "700", color: durianTheme.colors.ink },
+  kbCardExcerpt: { fontSize: 11, color: durianTheme.colors.muted, lineHeight: 16 },
 });
