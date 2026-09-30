@@ -19,7 +19,7 @@ import { durianTheme } from "@/src/theme/durianTheme";
 import { getZone, listTrees, getZoneSafety } from "./treeApi";
 import type { TreeSummary, ZoneDetail, ZoneSafetySummary } from "./treeTypes";
 import { TreeDetailContent } from "./TreeDetailScreen";
-import { listCultivationSeasons } from "@/src/features/cultivation/api/cultivationApi";
+import { listCultivationSeasons, getSafeHarvestDate } from "@/src/features/cultivation/api/cultivationApi";
 import type { CultivationSeason } from "@/src/features/cultivation/api/cultivationTypes";
 
 const HEALTH_COLORS: Record<string, string> = {
@@ -167,8 +167,15 @@ function SafetySummaryCard({ summary }: { summary: ZoneSafetySummary }) {
   );
 }
 
-function ActiveSeasonBanner({ season }: { season: CultivationSeason }) {
+function ActiveSeasonBanner({
+  season,
+  safeHarvestDate,
+}: {
+  season: CultivationSeason;
+  safeHarvestDate: string | null | undefined;
+}) {
   const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
   const end = season.endDate ? new Date(season.endDate) : null;
   const daysLeft = end
     ? Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
@@ -180,6 +187,21 @@ function ActiveSeasonBanner({ season }: { season: CultivationSeason }) {
     daysLeft == null ? "#6b7280" : daysLeft <= 14 ? "#dc2626" : daysLeft <= 30 ? "#ca8a04" : "#15803d";
   const daysBg =
     daysLeft == null ? "#f3f4f6" : daysLeft <= 14 ? "#fee2e2" : daysLeft <= 30 ? "#fef9c3" : "#dcfce7";
+
+  const isSafeNow = safeHarvestDate != null && safeHarvestDate <= todayStr;
+  const safeLabel = safeHarvestDate
+    ? new Date(safeHarvestDate).toLocaleDateString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    : null;
+  const daysUntilSafe =
+    safeHarvestDate && safeHarvestDate > todayStr
+      ? Math.ceil(
+          (new Date(safeHarvestDate).getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+        )
+      : null;
 
   return (
     <View style={styles.seasonBanner}>
@@ -194,6 +216,17 @@ function ActiveSeasonBanner({ season }: { season: CultivationSeason }) {
             </Text>
           ) : null}
           <Text style={styles.seasonHarvest}>Thu hoạch dự kiến: {endLabel}</Text>
+          {safeHarvestDate !== undefined ? (
+            isSafeNow ? (
+              <Text style={styles.seasonSafeOk}>✓ Đủ điều kiện thu hoạch (từ {safeLabel})</Text>
+            ) : daysUntilSafe != null ? (
+              <Text style={styles.seasonSafeWait}>
+                ⚠ Còn {daysUntilSafe} ngày đến ngày an toàn ({safeLabel})
+              </Text>
+            ) : (
+              <Text style={styles.seasonSafeUnknown}>Chưa có dữ liệu hóa chất</Text>
+            )
+          ) : null}
         </View>
       </View>
       {daysLeft != null ? (
@@ -216,6 +249,7 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
   const [trees, setTrees] = useState<TreeSummary[]>([]);
   const [safety, setSafety] = useState<ZoneSafetySummary | null>(null);
   const [activeSeason, setActiveSeason] = useState<CultivationSeason | null>(null);
+  const [safeHarvestDate, setSafeHarvestDate] = useState<string | null | undefined>(undefined);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sheetTreeId, setSheetTreeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -242,6 +276,17 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
             (s) => s.startDate <= today && (!s.endDate || s.endDate >= today),
           ) ?? null;
         setActiveSeason(currentSeason);
+        if (currentSeason) {
+          getSafeHarvestDate(currentSeason.id)
+            .then((res) => {
+              if (active) setSafeHarvestDate(res.earliestSafeHarvestDate ?? null);
+            })
+            .catch(() => {
+              if (active) setSafeHarvestDate(null);
+            });
+        } else {
+          setSafeHarvestDate(undefined);
+        }
       })
       .catch((err) => {
         if (!active) return;
@@ -280,7 +325,9 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          {activeSeason ? <ActiveSeasonBanner season={activeSeason} /> : null}
+          {activeSeason ? (
+            <ActiveSeasonBanner season={activeSeason} safeHarvestDate={safeHarvestDate} />
+          ) : null}
           {safety ? <SafetySummaryCard summary={safety} /> : null}
 
           {/* Tree Map Legend */}
@@ -448,6 +495,9 @@ const styles = StyleSheet.create({
   seasonName: { fontSize: 14, fontWeight: "800", color: durianTheme.colors.ink },
   seasonMeta: { fontSize: 11, color: "#4b7c5e" },
   seasonHarvest: { fontSize: 11, color: durianTheme.colors.muted, marginTop: 2 },
+  seasonSafeOk: { fontSize: 11, color: "#15803d", fontWeight: "700", marginTop: 3 },
+  seasonSafeWait: { fontSize: 11, color: "#b45309", fontWeight: "700", marginTop: 3 },
+  seasonSafeUnknown: { fontSize: 11, color: "#9ca3af", marginTop: 3 },
   daysLeftBadge: {
     paddingHorizontal: 10,
     paddingVertical: 6,
