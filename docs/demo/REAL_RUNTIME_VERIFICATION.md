@@ -24,8 +24,8 @@ curl -H "Authorization: Bearer <JWT>" http://localhost:8080/api/v1/farms
 ```
 
 **Kết quả mong đợi:**
-- Trả về array chứa farm `demo-farm-khoa-luan-2026`
-- Farm có 4 zones: `demo-zone-a-vung-trong-demo` (Khu Bắc), `zone-b-khu-nam`, `zone-c-khu-dong`, `zone-d-khu-tay`
+- Trả về array chứa farm `farm-khoa-luan-2026`
+- Farm có 4 zones: `zone-a-khu-bac` (Khu Bắc), `zone-b-khu-nam`, `zone-c-khu-dong`, `zone-d-khu-tay`
 - Response **không** hard-coded trong frontend — đến từ MongoDB `duriancare_farm`
 
 ---
@@ -60,13 +60,13 @@ curl -X PATCH \
 
 ```bash
 curl -H "Authorization: Bearer <JWT>" \
-  "http://localhost:8080/api/v1/trees?farmId=demo-farm-khoa-luan-2026&page=0&size=100"
+  "http://localhost:8080/api/v1/trees?farmId=farm-khoa-luan-2026&page=0&size=100"
 ```
 
 **Kết quả mong đợi:**
-- Tổng 100 cây: 53 HEALTHY, 23 SUSPECTED, 14 DISEASED, 10 TREATING
-- ID cây: `DC-T001`…`DC-T012`, `tree-13`…`tree-100`
-- Phân bố: Khu Bắc (T001–T025), Khu Nam (T026–T050), Khu Đông (T051–T075), Khu Tây (T076–T100)
+- Tổng 100 cây: trả về danh sách cây với phân bố sức khỏe
+- ID cây: `tree-001`…`tree-012` (đã migrate từ `DC-T001`), `tree-013`…`tree-100`
+- Phân bố: Khu Bắc (`zone-a-khu-bac`: T001–T025), Khu Nam (`zone-b-khu-nam`: T026–T050), Khu Đông (`zone-c-khu-dong`: T051–T075), Khu Tây (`zone-d-khu-tay`: T076–T100)
 
 ---
 
@@ -74,11 +74,11 @@ curl -H "Authorization: Bearer <JWT>" \
 
 ```bash
 curl -H "Authorization: Bearer <JWT>" \
-  "http://localhost:8080/api/v1/diagnosis?treeId=DC-T010"
+  "http://localhost:8080/api/v1/diagnosis?treeId=tree-010"
 ```
 
 **Kết quả mong đợi:**
-- Cây `DC-T010` có record `LEAF_BLIGHT` → status TREATING
+- Cây `tree-010` có diagnosis record (đã migrate từ `DC-T010`)
 - Không có field nào là mock/fake
 
 ---
