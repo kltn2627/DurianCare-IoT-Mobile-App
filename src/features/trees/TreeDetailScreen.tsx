@@ -143,7 +143,7 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
       return;
     }
     knowledgeApi
-      .list({ search: prediction.disease.name, size: 2, status: "PUBLISHED" })
+      .list({ search: prediction.disease.code, size: 2, status: "PUBLISHED" })
       .then((page) => setKbArticles(page.articles))
       .catch(() => setKbArticles([]));
   }, [prediction]);
