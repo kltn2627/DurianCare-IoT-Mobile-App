@@ -107,6 +107,18 @@ export async function listDiagnoses(
   return res.data;
 }
 
+export async function updateTreeHealthStatus(
+  treeId: string,
+  healthStatus: "TREATING" | "RECOVERED",
+): Promise<TreeDetail> {
+  const res = await authorizedRequest<TreeDetail>({
+    method: "PATCH",
+    url: `/api/trees/${encodeURIComponent(treeId)}/health-status`,
+    data: { healthStatus },
+  });
+  return res.data;
+}
+
 export async function saveDiagnosis(
   treeId: string,
   body: {

@@ -27,7 +27,7 @@ import { durianTheme } from "@/src/theme/durianTheme";
 import { predictDurianDisease, type DiseasePrediction } from "@/src/features/scanner/diseasePredictionApi";
 import type { DiseaseCategory } from "@/src/features/scanner/diseaseCatalog";
 import { getDiseaseAlertMessage } from "@/src/features/scanner/diseaseCatalog";
-import { getTree, listDiagnoses, saveDiagnosis } from "./treeApi";
+import { getTree, listDiagnoses, saveDiagnosis, updateTreeHealthStatus } from "./treeApi";
 import type { TreeDetail, TreeDiagnosis } from "./treeTypes";
 import { knowledgeApi } from "@/src/features/knowledge/knowledgeApi";
 import type { KnowledgeArticle } from "@/src/features/knowledge/knowledgeTypes";
@@ -39,6 +39,7 @@ const HEALTH_LABELS: Record<string, string> = {
   DISEASED: "Bệnh",
   TREATING: "Đang điều trị",
   SUSPECTED: "Nghi ngờ",
+  RECOVERED: "Đã hồi phục",
 };
 
 const HEALTH_COLORS: Record<string, string> = {
@@ -46,6 +47,7 @@ const HEALTH_COLORS: Record<string, string> = {
   DISEASED: "#dc2626",
   TREATING: "#ea580c",
   SUSPECTED: "#ca8a04",
+  RECOVERED: "#0891b2",
 };
 
 const HEALTH_BG: Record<string, string> = {
@@ -53,6 +55,7 @@ const HEALTH_BG: Record<string, string> = {
   DISEASED: "#fee2e2",
   TREATING: "#ffedd5",
   SUSPECTED: "#fef9c3",
+  RECOVERED: "#e0f2fe",
 };
 
 // Disease category → timeline dot color
@@ -484,6 +487,58 @@ function RecoveryPanel({ treeId, treeCode, onSaved }: RecoveryPanelProps) {
   );
 }
 
+// ── Treatment Panel (DISEASED → TREATING) ────────────────────────────────────
+
+interface TreatmentPanelProps {
+  treeId: string;
+  onSaved: () => void;
+}
+
+function TreatmentPanel({ treeId, onSaved }: TreatmentPanelProps) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function startTreating() {
+    setSaving(true);
+    setError(null);
+    try {
+      await updateTreeHealthStatus(treeId, "TREATING");
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Cập nhật thất bại.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <View style={[styles.card, { borderColor: "#fed7aa" }]}>
+      <Text style={[styles.cardTitle, { color: "#ea580c" }]}>Bắt đầu điều trị</Text>
+      <Text style={[styles.recoveryHint]}>
+        Xác nhận bạn đã bắt đầu điều trị cho cây này. Trạng thái sẽ chuyển sang "Đang điều trị".
+      </Text>
+      {error ? <Text style={styles.errText}>{error}</Text> : null}
+      {saving ? (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator size="small" color="#ea580c" />
+          <Text style={styles.loadingText}>Đang cập nhật...</Text>
+        </View>
+      ) : (
+        <Pressable
+          onPress={startTreating}
+          style={({ pressed }) => [
+            styles.primaryBtn,
+            { backgroundColor: "#ea580c" },
+            pressed && { opacity: 0.8 },
+          ]}
+        >
+          <Text style={styles.primaryBtnText}>Bắt đầu điều trị</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
 // ── TreeDetailContent — reusable (used by screen and by inline sheet) ─────────
 
 interface ContentProps {
@@ -531,6 +586,7 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved }: Content
   const health = tree?.healthStatus;
   const needsRecovery =
     health === "DISEASED" || health === "TREATING" || health === "SUSPECTED";
+  const needsTreatment = health === "DISEASED" || health === "SUSPECTED";
 
   if (loading) {
     return (
@@ -572,6 +628,11 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved }: Content
             {HEALTH_LABELS[health] ?? health}
           </Text>
         </View>
+      ) : null}
+
+      {/* Start treatment button — for DISEASED or SUSPECTED trees */}
+      {needsTreatment ? (
+        <TreatmentPanel treeId={treeId} onSaved={refresh} />
       ) : null}
 
       {/* Recovery confirmation panel — only for sick/treating trees */}
