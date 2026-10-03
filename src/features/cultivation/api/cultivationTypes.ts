@@ -169,6 +169,14 @@ export type CreateCultivationSeasonRequest = {
   variety?: string | null;
 };
 
+export type UpdateCultivationSeasonRequest = {
+  crop?: string | null;
+  endDate?: string | null;
+  name?: string | null;
+  startDate?: string | null;
+  variety?: string | null;
+};
+
 export type CareFarmOption = {
   farmId: string;
   label: string;

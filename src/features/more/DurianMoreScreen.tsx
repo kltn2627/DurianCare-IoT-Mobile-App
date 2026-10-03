@@ -8,6 +8,7 @@ import {
   MoreHorizontal,
   QrCode,
   ShieldCheck,
+  TreePine,
   UserRound,
   Users,
   type LucideIcon,

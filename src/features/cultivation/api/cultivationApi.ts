@@ -29,6 +29,7 @@ import type {
   SafeHarvestDateResponse,
   TraceabilityResponse,
   UpdateCultivationActivityRequest,
+  UpdateCultivationSeasonRequest,
   UpdateFarmRequest,
   UpdateFarmZoneRequest,
 } from "./cultivationTypes";
@@ -145,6 +146,15 @@ export async function createCultivationSeason(body: CreateCultivationSeasonReque
     data: body,
     method: "POST",
     url: "/api/v1/cultivation-seasons",
+  });
+  return response.data;
+}
+
+export async function updateCultivationSeason(id: string, body: UpdateCultivationSeasonRequest) {
+  const response = await authorizedRequest<CultivationSeason>({
+    data: body,
+    method: "PATCH",
+    url: `/api/v1/cultivation-seasons/${encodeURIComponent(id)}`,
   });
   return response.data;
 }
