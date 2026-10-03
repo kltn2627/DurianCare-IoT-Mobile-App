@@ -1,11 +1,13 @@
 import { authorizedRequest } from "@/src/features/auth/authApi";
 import type {
+  CreateCarePlanRequest,
   CreateFarmRequest,
   CreateZoneRequest,
   FarmSummary,
   GenerateTreesRequest,
   GenerateTreesResult,
   PagedResponse,
+  TreeCarePlan,
   TreeDetail,
   TreeDiagnosis,
   TreeSummary,
@@ -133,6 +135,26 @@ export async function saveDiagnosis(
   const res = await authorizedRequest<TreeDiagnosis>({
     method: "POST",
     url: `/api/trees/${encodeURIComponent(treeId)}/diagnoses`,
+    data: body,
+  });
+  return res.data;
+}
+
+export async function listCarePlans(treeId: string): Promise<TreeCarePlan[]> {
+  const res = await authorizedRequest<TreeCarePlan[]>({
+    method: "GET",
+    url: `/api/trees/${encodeURIComponent(treeId)}/care-plans`,
+  });
+  return res.data;
+}
+
+export async function createCarePlan(
+  treeId: string,
+  body: CreateCarePlanRequest,
+): Promise<TreeCarePlan> {
+  const res = await authorizedRequest<TreeCarePlan>({
+    method: "POST",
+    url: `/api/trees/${encodeURIComponent(treeId)}/care-plans`,
     data: body,
   });
   return res.data;

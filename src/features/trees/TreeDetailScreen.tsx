@@ -27,8 +27,8 @@ import { durianTheme } from "@/src/theme/durianTheme";
 import { predictDurianDisease, type DiseasePrediction } from "@/src/features/scanner/diseasePredictionApi";
 import type { DiseaseCategory } from "@/src/features/scanner/diseaseCatalog";
 import { getDiseaseAlertMessage } from "@/src/features/scanner/diseaseCatalog";
-import { getTree, listDiagnoses, saveDiagnosis, updateTreeHealthStatus } from "./treeApi";
-import type { TreeDetail, TreeDiagnosis } from "./treeTypes";
+import { createCarePlan, getTree, listCarePlans, listDiagnoses, saveDiagnosis, updateTreeHealthStatus } from "./treeApi";
+import type { CarePlanStatus, CreateCarePlanRequest, TreeCarePlan, TreeDetail, TreeDiagnosis } from "./treeTypes";
 import { knowledgeApi } from "@/src/features/knowledge/knowledgeApi";
 import type { KnowledgeArticle } from "@/src/features/knowledge/knowledgeTypes";
 
@@ -487,6 +487,156 @@ function RecoveryPanel({ treeId, treeCode, onSaved }: RecoveryPanelProps) {
   );
 }
 
+// ── Care Plan Section ─────────────────────────────────────────────────────────
+
+const PLAN_STATUS_LABEL: Record<CarePlanStatus, string> = {
+  PLANNED: "Đã lên kế hoạch",
+  IN_PROGRESS: "Đang thực hiện",
+  COMPLETED: "Hoàn thành",
+  CANCELLED: "Đã hủy",
+};
+
+const PLAN_STATUS_COLOR: Record<CarePlanStatus, string> = {
+  PLANNED: "#ca8a04",
+  IN_PROGRESS: "#ea580c",
+  COMPLETED: "#16a34a",
+  CANCELLED: "#6b7280",
+};
+
+interface CarePlanSectionProps {
+  treeId: string;
+  diseaseCode: string;
+  diagnosisId?: string | null;
+  onSaved?: () => void;
+}
+
+function CarePlanSection({ treeId, diseaseCode, diagnosisId, onSaved }: CarePlanSectionProps) {
+  const [plans, setPlans] = useState<TreeCarePlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+  const [treatment, setTreatment] = useState("");
+  const [followUpDate, setFollowUpDate] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listCarePlans(treeId)
+      .then(setPlans)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [treeId]);
+
+  const activePlan = plans.find(
+    (p) => p.status === "PLANNED" || p.status === "IN_PROGRESS",
+  );
+
+  async function create() {
+    if (!diseaseCode) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const plan = await createCarePlan(treeId, {
+        diseaseCode,
+        diagnosisId: diagnosisId ?? undefined,
+        treatment: treatment.trim() || undefined,
+        startDate: today,
+        followUpDate: followUpDate || undefined,
+      } as CreateCarePlanRequest);
+      setPlans((prev) => [plan, ...prev]);
+      setExpanded(false);
+      setTreatment("");
+      setFollowUpDate("");
+      onSaved?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể tạo kế hoạch.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return null;
+
+  return (
+    <View style={styles.card}>
+      <Pressable onPress={() => setExpanded((v) => !v)} style={styles.panelHeader}>
+        <Text style={styles.cardTitle}>Kế hoạch chăm sóc</Text>
+        {expanded ? (
+          <ChevronUp size={18} color="#6b7280" />
+        ) : (
+          <ChevronDown size={18} color="#6b7280" />
+        )}
+      </Pressable>
+
+      {activePlan ? (
+        <View style={styles.activePlanBox}>
+          <View style={styles.activePlanRow}>
+            <Text style={styles.activePlanLabel}>Trạng thái:</Text>
+            <Text style={[styles.activePlanStatus, { color: PLAN_STATUS_COLOR[activePlan.status] }]}>
+              {PLAN_STATUS_LABEL[activePlan.status]}
+            </Text>
+          </View>
+          {activePlan.treatment ? (
+            <View style={styles.activePlanRow}>
+              <Text style={styles.activePlanLabel}>Điều trị:</Text>
+              <Text style={styles.activePlanValue}>{activePlan.treatment}</Text>
+            </View>
+          ) : null}
+          {activePlan.followUpDate ? (
+            <View style={styles.activePlanRow}>
+              <Text style={styles.activePlanLabel}>Tái khám:</Text>
+              <Text style={styles.activePlanValue}>{activePlan.followUpDate}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {expanded ? (
+        <View style={styles.aiBody}>
+          <Text style={styles.recoveryHint}>
+            Tạo kế hoạch điều trị và lên lịch tái khám cho cây.
+          </Text>
+          <TextInput
+            style={styles.notesInput}
+            placeholder="Ghi chú điều trị (tùy chọn)..."
+            placeholderTextColor="#9ca3af"
+            multiline
+            numberOfLines={3}
+            value={treatment}
+            onChangeText={setTreatment}
+          />
+          <TextInput
+            style={[styles.notesInput, { marginTop: 8 }]}
+            placeholder="Ngày tái khám (yyyy-mm-dd)..."
+            placeholderTextColor="#9ca3af"
+            value={followUpDate}
+            onChangeText={setFollowUpDate}
+          />
+          {error ? <Text style={styles.errText}>{error}</Text> : null}
+          {saving ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color="#ea580c" />
+              <Text style={styles.loadingText}>Đang lưu...</Text>
+            </View>
+          ) : (
+            <Pressable
+              onPress={create}
+              style={({ pressed }) => [
+                styles.recoveryBtn,
+                { backgroundColor: "#ea580c" },
+                pressed && { opacity: 0.8 },
+              ]}
+            >
+              <CheckCircle size={15} color="#fff" />
+              <Text style={styles.primaryBtnText}>Tạo kế hoạch chăm sóc</Text>
+            </Pressable>
+          )}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 // ── Treatment Panel (DISEASED → TREATING) ────────────────────────────────────
 
 interface TreatmentPanelProps {
@@ -584,9 +734,10 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved }: Content
   }
 
   const health = tree?.healthStatus;
-  const needsRecovery =
-    health === "DISEASED" || health === "TREATING" || health === "SUSPECTED";
+  const needsRecovery = health === "TREATING";
   const needsTreatment = health === "DISEASED" || health === "SUSPECTED";
+  const needsCarePlan =
+    health === "DISEASED" || health === "TREATING" || health === "SUSPECTED";
 
   if (loading) {
     return (
@@ -635,9 +786,19 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved }: Content
         <TreatmentPanel treeId={treeId} onSaved={refresh} />
       ) : null}
 
-      {/* Recovery confirmation panel — only for sick/treating trees */}
+      {/* Recovery confirmation panel — only for trees being treated */}
       {needsRecovery ? (
         <RecoveryPanel treeId={treeId} treeCode={tree.treeCode} onSaved={refresh} />
+      ) : null}
+
+      {/* Care plan section — for sick/suspected/treating trees */}
+      {needsCarePlan ? (
+        <CarePlanSection
+          treeId={treeId}
+          diseaseCode={tree.latestDiseaseCode ?? "UNKNOWN"}
+          diagnosisId={null}
+          onSaved={refresh}
+        />
       ) : null}
 
       {/* Embedded AI diagnosis panel */}
@@ -781,6 +942,11 @@ const styles = StyleSheet.create({
 
   panelHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   aiBody: { gap: 10 },
+  activePlanBox: { marginTop: 8, padding: 10, backgroundColor: "#fff7ed", borderRadius: 8, gap: 4 },
+  activePlanRow: { flexDirection: "row", gap: 6 },
+  activePlanLabel: { fontSize: 12, fontWeight: "600", color: "#6b7280", minWidth: 80 },
+  activePlanStatus: { fontSize: 12, fontWeight: "700" },
+  activePlanValue: { fontSize: 12, color: "#374151", flex: 1 },
 
   pickerRow: { flexDirection: "row", gap: 10 },
   pickerBtn: {
