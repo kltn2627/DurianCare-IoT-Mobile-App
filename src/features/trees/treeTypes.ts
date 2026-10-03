@@ -162,3 +162,16 @@ export interface CreateCarePlanRequest {
   startDate: string;
   followUpDate?: string | null;
 }
+
+export type RecoveryOutcome = "RECOVERED" | "IMPROVED" | "STABLE" | "WORSENED" | "UNCERTAIN";
+
+export interface RecoveryEvaluationResponse {
+  treeId: string;
+  outcome: RecoveryOutcome;
+  previousDiseaseCode?: string | null;
+  previousConfidence?: number | null;
+  currentDiseaseCode?: string | null;
+  currentConfidence?: number | null;
+  reason: string;
+  evaluatedAt: string;
+}

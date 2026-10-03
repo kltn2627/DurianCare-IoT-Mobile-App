@@ -27,8 +27,8 @@ import { durianTheme } from "@/src/theme/durianTheme";
 import { predictDurianDisease, type DiseasePrediction } from "@/src/features/scanner/diseasePredictionApi";
 import type { DiseaseCategory } from "@/src/features/scanner/diseaseCatalog";
 import { getDiseaseAlertMessage } from "@/src/features/scanner/diseaseCatalog";
-import { createCarePlan, getTree, listCarePlans, listDiagnoses, saveDiagnosis, updateTreeHealthStatus } from "./treeApi";
-import type { CarePlanStatus, CreateCarePlanRequest, TreeCarePlan, TreeDetail, TreeDiagnosis } from "./treeTypes";
+import { createCarePlan, evaluateRecovery, getTree, listCarePlans, listDiagnoses, saveDiagnosis, updateTreeHealthStatus } from "./treeApi";
+import type { CarePlanStatus, CreateCarePlanRequest, RecoveryEvaluationResponse, TreeCarePlan, TreeDetail, TreeDiagnosis } from "./treeTypes";
 import { knowledgeApi } from "@/src/features/knowledge/knowledgeApi";
 import type { KnowledgeArticle } from "@/src/features/knowledge/knowledgeTypes";
 
@@ -391,12 +391,41 @@ interface RecoveryPanelProps {
   onSaved: () => void;
 }
 
+const RECOVERY_OUTCOME_ELIGIBLE = new Set(["RECOVERED", "IMPROVED"]);
+
+const RECOVERY_OUTCOME_LABEL: Record<string, string> = {
+  RECOVERED: "Đã hồi phục",
+  IMPROVED: "Cải thiện rõ rệt",
+  STABLE: "Ổn định",
+  WORSENED: "Xấu đi",
+  UNCERTAIN: "Chưa xác định",
+};
+
 function RecoveryPanel({ treeId, treeCode, onSaved }: RecoveryPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const [notes, setNotes] = useState("");
+  const [evaluating, setEvaluating] = useState(false);
+  const [evaluation, setEvaluation] = useState<RecoveryEvaluationResponse | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function handleExpand() {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && !evaluation) {
+      setEvaluating(true);
+      setError(null);
+      try {
+        const result = await evaluateRecovery(treeId);
+        setEvaluation(result);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Không thể đánh giá phục hồi.");
+      } finally {
+        setEvaluating(false);
+      }
+    }
+  }
 
   async function confirm() {
     const trimmed = notes.trim();
@@ -424,6 +453,8 @@ function RecoveryPanel({ treeId, treeCode, onSaved }: RecoveryPanelProps) {
     }
   }
 
+  const eligible = evaluation ? RECOVERY_OUTCOME_ELIGIBLE.has(evaluation.outcome) : false;
+
   if (savedOk) {
     return (
       <View style={[styles.card, styles.recoveryCard]}>
@@ -438,7 +469,7 @@ function RecoveryPanel({ treeId, treeCode, onSaved }: RecoveryPanelProps) {
   return (
     <View style={[styles.card, styles.recoveryCard]}>
       <Pressable
-        onPress={() => setExpanded((v) => !v)}
+        onPress={handleExpand}
         style={styles.panelHeader}
         accessibilityRole="button"
       >
@@ -452,35 +483,60 @@ function RecoveryPanel({ treeId, treeCode, onSaved }: RecoveryPanelProps) {
 
       {expanded ? (
         <View style={styles.aiBody}>
-          <Text style={styles.recoveryHint}>
-            Xác nhận cây đã phục hồi sau điều trị. Ghi chú bắt buộc để tạo bằng chứng.
-          </Text>
-          <TextInput
-            style={styles.notesInput}
-            placeholder="Ghi chú xác nhận (bắt buộc)..."
-            placeholderTextColor="#9ca3af"
-            multiline
-            numberOfLines={3}
-            value={notes}
-            onChangeText={setNotes}
-          />
+          {evaluating ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color="#16a34a" />
+              <Text style={styles.loadingText}>Đang đánh giá tình trạng phục hồi...</Text>
+            </View>
+          ) : evaluation ? (
+            <View style={[styles.evalBox, { borderColor: eligible ? "#bbf7d0" : "#fecaca" }]}>
+              <Text style={[styles.evalOutcome, { color: eligible ? "#16a34a" : "#dc2626" }]}>
+                {RECOVERY_OUTCOME_LABEL[evaluation.outcome] ?? evaluation.outcome}
+              </Text>
+              <Text style={styles.evalReason}>{evaluation.reason}</Text>
+              {!eligible ? (
+                <Text style={styles.evalBlock}>Chưa đủ điều kiện xác nhận hồi phục</Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {eligible ? (
+            <>
+              <Text style={styles.recoveryHint}>
+                Xác nhận cây đã phục hồi sau điều trị. Ghi chú bắt buộc để tạo bằng chứng.
+              </Text>
+              <TextInput
+                style={styles.notesInput}
+                placeholder="Ghi chú xác nhận (bắt buộc)..."
+                placeholderTextColor="#9ca3af"
+                multiline
+                numberOfLines={3}
+                value={notes}
+                onChangeText={setNotes}
+              />
+            </>
+          ) : null}
+
           {error ? (
             <Text style={styles.errText}>{error}</Text>
           ) : null}
-          {saving ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator size="small" color="#16a34a" />
-              <Text style={styles.loadingText}>Đang lưu...</Text>
-            </View>
-          ) : (
-            <Pressable
-              onPress={confirm}
-              style={({ pressed }) => [styles.recoveryBtn, pressed && { opacity: 0.8 }]}
-            >
-              <CheckCircle size={15} color="#fff" />
-              <Text style={styles.primaryBtnText}>Gửi xác nhận phục hồi</Text>
-            </Pressable>
-          )}
+
+          {eligible ? (
+            saving ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator size="small" color="#16a34a" />
+                <Text style={styles.loadingText}>Đang lưu...</Text>
+              </View>
+            ) : (
+              <Pressable
+                onPress={confirm}
+                style={({ pressed }) => [styles.recoveryBtn, pressed && { opacity: 0.8 }]}
+              >
+                <CheckCircle size={15} color="#fff" />
+                <Text style={styles.primaryBtnText}>Gửi xác nhận phục hồi</Text>
+              </Pressable>
+            )
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -1021,6 +1077,11 @@ const styles = StyleSheet.create({
   ghostBtnText: { fontSize: 12, fontWeight: "700", color: durianTheme.colors.moss },
 
   recoveryHint: { fontSize: 12, color: durianTheme.colors.muted, lineHeight: 18 },
+
+  evalBox: { borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 8 },
+  evalOutcome: { fontSize: 13, fontWeight: "700", marginBottom: 4 },
+  evalReason: { fontSize: 12, color: durianTheme.colors.muted, lineHeight: 18 },
+  evalBlock: { fontSize: 12, fontWeight: "700", color: "#dc2626", marginTop: 6 },
   notesInput: {
     borderWidth: 1,
     borderColor: durianTheme.colors.mist,

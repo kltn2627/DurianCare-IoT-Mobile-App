@@ -7,6 +7,7 @@ import type {
   GenerateTreesRequest,
   GenerateTreesResult,
   PagedResponse,
+  RecoveryEvaluationResponse,
   TreeCarePlan,
   TreeDetail,
   TreeDiagnosis,
@@ -156,6 +157,14 @@ export async function createCarePlan(
     method: "POST",
     url: `/api/trees/${encodeURIComponent(treeId)}/care-plans`,
     data: body,
+  });
+  return res.data;
+}
+
+export async function evaluateRecovery(treeId: string): Promise<RecoveryEvaluationResponse> {
+  const res = await authorizedRequest<RecoveryEvaluationResponse>({
+    method: "POST",
+    url: `/api/trees/${encodeURIComponent(treeId)}/evaluate-recovery`,
   });
   return res.data;
 }

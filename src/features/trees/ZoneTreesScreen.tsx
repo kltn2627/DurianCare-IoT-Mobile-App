@@ -27,6 +27,7 @@ const HEALTH_COLORS: Record<string, string> = {
   DISEASED: "#ef4444",
   TREATING: "#f97316",
   SUSPECTED: "#f97316",
+  RECOVERED: "#0891b2",
 };
 
 const HEALTH_LABELS: Record<string, string> = {
@@ -34,6 +35,7 @@ const HEALTH_LABELS: Record<string, string> = {
   DISEASED: "Bệnh",
   TREATING: "Điều trị",
   SUSPECTED: "Nghi ngờ",
+  RECOVERED: "Đã hồi phục",
 };
 
 const HEALTH_BG: Record<string, string> = {
@@ -41,6 +43,7 @@ const HEALTH_BG: Record<string, string> = {
   DISEASED: "#fee2e2",
   TREATING: "#ffedd5",
   SUSPECTED: "#ffedd5",
+  RECOVERED: "#e0f2fe",
 };
 
 function treeColor(tree: TreeSummary): string {
