@@ -156,6 +156,7 @@ function resolveDisease(code: string, recommendation?: DiseaseRecommendation | n
   if (known) return known;
 
   return {
+    category: "DISEASE",
     code: normalizedCode as DurianDisease["code"],
     name: recommendation?.vietnameseName || normalizedCode,
     note: recommendation?.diseaseSummary || "Backend chưa trả mô tả ngắn cho kết quả này.",
@@ -226,15 +227,26 @@ function normalizePredictionData(payload: unknown, image?: UploadableImage): Pre
       }))
     : [];
 
+  const confidence = normalizeConfidence(confidenceText);
+  const resolvedDisease = resolveDisease(predictedDisease, recommendation);
+
+  // Override category based on confidence thresholds (Phase F standardization)
+  let disease = resolvedDisease;
+  if (!predictedDisease || confidence < 20) {
+    disease = { ...resolvedDisease, category: "INVALID_IMAGE" };
+  } else if (confidence < 50 && resolvedDisease.category !== "HEALTHY") {
+    disease = { ...resolvedDisease, category: "LOW_CONFIDENCE" };
+  }
+
   return {
     boundingBox: normalizeBoundingBox(data.boundingBox ?? data.bounding_box, image?.width, image?.height),
-    confidence: normalizeConfidence(confidenceText),
+    confidence,
     confidenceText,
     decisionSupport: isRecord(data.decisionSupport ?? data.decision_support)
       ? ((data.decisionSupport ?? data.decision_support) as DecisionSupport)
       : null,
     deviceId: readString(data.deviceId ?? data.device_id),
-    disease: resolveDisease(predictedDisease, recommendation),
+    disease,
     historyId,
     image: normalizeStoredImage(data.image, historyId),
     predictedDisease,

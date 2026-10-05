@@ -2,6 +2,7 @@ import { Tabs } from "expo-router";
 import type { BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs";
 import {
   CalendarDays,
+  Camera,
   LayoutDashboard,
   MapPinned,
   MoreHorizontal,
@@ -90,9 +91,12 @@ export default function DurianCareMainTabs() {
       <Tabs.Screen name="authorization" options={{ href: null }} />
       <Tabs.Screen name="chat" options={{ href: null }} />
       <Tabs.Screen name="community" options={{ href: null }} />
+      <Tabs.Screen name="camera" options={{ href: null }} />
+      <Tabs.Screen name="export-compliance" options={{ href: null }} />
       <Tabs.Screen name="knowledge" options={{ href: null }} />
       <Tabs.Screen name="notifications" options={{ href: null }} />
       <Tabs.Screen name="profile" options={{ href: null }} />
+      <Tabs.Screen name="qr-scan" options={{ href: null }} />
       <Tabs.Screen name="search" options={{ href: null }} />
       <Tabs.Screen name="sensors" options={{ href: null }} />
       <Tabs.Screen name="traceability" options={{ href: null }} />

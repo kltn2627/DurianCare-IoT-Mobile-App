@@ -4,7 +4,7 @@ import type { DiagnosisDetail } from "./types";
 
 type DiseaseCode = DurianDisease["code"];
 
-const DETAILED_CONTENT: Record<DiseaseCode, Omit<DiagnosisDetail, "code" | "name" | "note">> = {
+const DETAILED_CONTENT: Record<DiseaseCode, Omit<DiagnosisDetail, "code" | "name" | "note" | "category">> = {
   Algal_Leaf_Spot: {
     biologicalTreatments: [
       "Tăng thông thoáng tán để giảm ẩm kéo dài trên bề mặt lá.",
@@ -140,6 +140,27 @@ const DETAILED_CONTENT: Record<DiseaseCode, Omit<DiagnosisDetail, "code" | "name
     ],
     sections: [],
   },
+  Healthy_Leaf: {
+    biologicalTreatments: ["Tiếp tục duy trì chế phẩm sinh học định kỳ để hỗ trợ hệ miễn dịch cây."],
+    causes: ["Không phát hiện nguyên nhân bệnh. Cây đang sinh trưởng trong điều kiện tốt."],
+    decisionSupport: [
+      "Tiếp tục theo dõi định kỳ.",
+      "Duy trì chế độ chăm sóc hiện tại; không cần can thiệp thuốc.",
+    ],
+    exportRequirements: ["Lá khỏe đủ điều kiện xuất vườn theo tiêu chuẩn thông thường."],
+    harvestInterval: "Không có hạn chế đặc biệt. Thu hoạch theo lịch bình thường.",
+    references: ["Cẩm nang chăm sóc DurianCare."],
+    summary:
+      "Lá được phân loại khỏe mạnh. Không phát hiện dấu hiệu bệnh, côn trùng hay tổn thương đáng lo ngại.",
+    symptoms: ["Không có triệu chứng bệnh được phát hiện."],
+    organicTreatments: ["Duy trì bón phân hữu cơ định kỳ."],
+    chemicalTreatments: ["Không cần xử lý hóa chất."],
+    prevention: [
+      "Tiếp tục theo dõi sức khỏe lá hàng tuần.",
+      "Duy trì thông thoáng tán và tưới đúng lịch.",
+    ],
+    sections: [],
+  },
   Allocaridara_Attacked: {
     biologicalTreatments: [
       "Khuyến khích thiên địch và theo dõi quần thể côn trùng bằng bẫy dính.",
@@ -187,7 +208,7 @@ const DETAILED_CONTENT: Record<DiseaseCode, Omit<DiagnosisDetail, "code" | "name
   },
 };
 
-for (const [code, detail] of Object.entries(DETAILED_CONTENT) as Array<[DiseaseCode, Omit<DiagnosisDetail, "code" | "name" | "note">]>) {
+for (const [code, detail] of Object.entries(DETAILED_CONTENT) as Array<[DiseaseCode, Omit<DiagnosisDetail, "code" | "name" | "note" | "category">]>) {
   detail.sections = [
     { heading: "Disease Summary", items: [detail.summary] },
     { heading: "Symptoms", items: detail.symptoms },
