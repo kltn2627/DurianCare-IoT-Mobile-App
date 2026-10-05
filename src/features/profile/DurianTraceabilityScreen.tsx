@@ -31,6 +31,7 @@ import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
 import { AuthApiError } from "@/src/features/auth/authApi";
 import {
   assessCompliance,
+  assessExportRelease,
   approveExportRelease,
   createExportRelease,
   createHarvestBatch,
@@ -172,10 +173,10 @@ function hasWorkspaceAccess(role?: string | null) {
   return Boolean(role && ["ADMIN", "FARMER", "OWNER", "ENGINEER", "EXPERT"].includes(role));
 }
 
-function releaseActions(release: ExportRelease): Array<{ label: string; value: ReleaseAction }> {
+function releaseActions(release: ExportRelease, canApprove: boolean): Array<{ label: string; value: ReleaseAction }> {
   if (release.status === "DRAFT") return [{ label: "Gửi duyệt", value: "submit" }];
-  if (release.status === "UNDER_REVIEW") return [{ label: "Duyệt", value: "approve" }, { label: "Thu hồi", value: "recall" }];
-  if (release.status === "APPROVED") return [{ label: "Phát hành", value: "release" }, { label: "Thu hồi", value: "recall" }];
+  if (release.status === "UNDER_REVIEW") return canApprove ? [{ label: "Duyệt", value: "approve" }] : [];
+  if (release.status === "APPROVED") return canApprove ? [{ label: "Phát hành", value: "release" }] : [];
   if (release.status === "RELEASED") return [{ label: "Thu hồi", value: "recall" }];
   return [];
 }
@@ -198,6 +199,8 @@ function snapshotSummary(snapshot?: TraceabilityResponse | null) {
   const careHistory = data.careHistory;
   return [
     ["Release ID", snapshot.releaseId],
+    ["Trạng thái hiện tại", snapshot.status],
+    ["Lý do thu hồi", snapshot.recallReason ?? undefined],
     ["Mã lô", harvest?.batchCode],
     ["Farm ID", harvest?.farmId],
     ["Khu/plot", harvest?.plotId],
@@ -206,6 +209,7 @@ function snapshotSummary(snapshot?: TraceabilityResponse | null) {
     ["Sản lượng", harvest ? `${harvest.quantity} ${harvest.quantityUnit}` : undefined],
     ["Rủi ro hóa chất", harvest?.chemicalRiskLevel ? riskLevelLabels[harvest.chemicalRiskLevel] : undefined],
     ["Đủ điều kiện release", readBoolean(compliance?.eligibleForExportRelease)],
+    ["Đánh giá lab", readValue(data.labAssessmentStatus)],
     ["Risk score", readValue(compliance?.riskScore)],
     ["Generated", formatDateTime(data.generatedAt)],
     ["Hoạt động chăm sóc", readValue(careHistory?.activities?.length)],
@@ -222,6 +226,7 @@ export function DurianTraceabilityScreen() {
   const [safetyData, setSafetyData] = useState<SafetyData>(emptySafetyData);
   const [selectedRelease, setSelectedRelease] = useState<ExportRelease | null>(null);
   const [traceability, setTraceability] = useState<TraceabilityResponse | null>(null);
+  const [releaseAssessment, setReleaseAssessment] = useState<ComplianceAssessment | null>(null);
   const [showHarvestForm, setShowHarvestForm] = useState(false);
   const [showReleaseForm, setShowReleaseForm] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -235,7 +240,6 @@ export function DurianTraceabilityScreen() {
   const [lastSyncedAt, setLastSyncedAt] = useState("");
 
   const role = session?.user.backendRole ?? session?.user.role;
-  const actorId = session?.user.id ?? "";
   const canOpen = hasWorkspaceAccess(role);
 
   const loadData = useCallback(
@@ -250,7 +254,7 @@ export function DurianTraceabilityScreen() {
       try {
         const [owned, authorized, plans, activities, harvestBatches, releases] = await Promise.allSettled([
           listOwnedFarms(),
-          listAuthorizedFarms(),
+          role === "FARMER" ? Promise.resolve([]) : listAuthorizedFarms(),
           listCultivationPlans(),
           listCultivationActivities(),
           listHarvestBatches(),
@@ -387,10 +391,12 @@ export function DurianTraceabilityScreen() {
   }
 
   function openReleaseForm(batchId?: string) {
+    const chosenBatch = batches.find((batch) => batch.id === batchId) ?? batches[0];
     setReleaseDraft({
       ...defaultReleaseDraft,
-      harvestBatchId: batchId ?? batches[0]?.id ?? "",
+      harvestBatchId: chosenBatch?.id ?? "",
       releaseCode: `ER-${Date.now()}`,
+      targetMarketCode: chosenBatch?.expectedDestinationMarket ?? "",
     });
     setShowReleaseForm(true);
   }
@@ -429,7 +435,6 @@ export function DurianTraceabilityScreen() {
     try {
       await createHarvestBatch({
         batchCode: harvestDraft.batchCode.trim(),
-        createdBy: actorId,
         cultivationSeasonId: selection.seasonId,
         expectedDestinationMarket: harvestDraft.expectedDestinationMarket.trim(),
         farmId: selection.farmId,
@@ -460,7 +465,6 @@ export function DurianTraceabilityScreen() {
       await createExportRelease({
         harvestBatchId: releaseDraft.harvestBatchId,
         releaseCode: releaseDraft.releaseCode.trim(),
-        submittedBy: actorId,
         targetMarketCode: releaseDraft.targetMarketCode.trim(),
       });
       setShowReleaseForm(false);
@@ -476,9 +480,15 @@ export function DurianTraceabilityScreen() {
   async function openReleaseDetail(release: ExportRelease) {
     setSelectedRelease(release);
     setTraceability(null);
+    setReleaseAssessment(null);
     setSnapshotLoading(true);
     try {
-      setTraceability(await getExportReleaseTraceability(release.id));
+      const [snapshot, assessment] = await Promise.all([
+        getExportReleaseTraceability(release.id),
+        assessExportRelease(release.harvestBatchId, release.targetMarketCode),
+      ]);
+      setTraceability(snapshot);
+      setReleaseAssessment(assessment);
     } catch (caught) {
       setError(friendlyError(caught, "Không thể tải traceability snapshot."));
     } finally {
@@ -493,15 +503,26 @@ export function DurianTraceabilityScreen() {
     }
     setSubmitting(true);
     try {
-      if (action === "submit") await submitExportRelease(release.id, actorId);
-      if (action === "approve") await approveExportRelease(release.id, actorId);
-      if (action === "release") await releaseExportRelease(release.id, actorId);
-      if (action === "recall") await recallExportRelease(release.id, actorId, recallReason?.trim() ?? "");
+      if (action === "approve" || action === "release") {
+        const assessment = await assessExportRelease(release.harvestBatchId, release.targetMarketCode);
+        setReleaseAssessment(assessment);
+        if (!assessment.eligibleForExportRelease) {
+          throw new Error(`Compliance hiện tại không đạt: ${assessment.blockingReasons.join(", ") || assessment.warnings.join(", ")}`);
+        }
+      }
+      if (action === "submit") await submitExportRelease(release.id);
+      if (action === "approve") await approveExportRelease(release.id);
+      if (action === "release") await releaseExportRelease(release.id);
+      if (action === "recall") await recallExportRelease(release.id, recallReason?.trim() ?? "");
       setNotice("Đã cập nhật workflow export release trên backend.");
       setSelectedRelease(null);
       setTraceability(null);
       await loadData({ silent: true });
     } catch (caught) {
+      if (action === "approve" || action === "release") {
+        const latest = await assessExportRelease(release.harvestBatchId, release.targetMarketCode).catch(() => null);
+        if (latest) setReleaseAssessment(latest);
+      }
       setError(friendlyError(caught, "Không thể cập nhật export release."));
     } finally {
       setSubmitting(false);
@@ -553,7 +574,7 @@ export function DurianTraceabilityScreen() {
       </ScrollView>
       <HarvestFormModal draft={harvestDraft} onChange={setHarvestDraft} onClose={() => setShowHarvestForm(false)} onSubmit={() => void submitHarvest()} selection={selection} submitting={submitting} visible={showHarvestForm} />
       <ReleaseFormModal batches={batches} draft={releaseDraft} onChange={setReleaseDraft} onClose={() => setShowReleaseForm(false)} onSubmit={() => void submitRelease()} submitting={submitting} visible={showReleaseForm} />
-      <ReleaseDetailModal onAction={(release, action, reason) => void runReleaseAction(release, action, reason)} onClose={() => setSelectedRelease(null)} release={selectedRelease} snapshot={traceability} snapshotLoading={snapshotLoading} submitting={submitting} />
+      <ReleaseDetailModal assessment={releaseAssessment} canApprove={role === "EXPERT" || role === "ENGINEER"} onAction={(release, action, reason) => void runReleaseAction(release, action, reason)} onClose={() => setSelectedRelease(null)} release={selectedRelease} snapshot={traceability} snapshotLoading={snapshotLoading} submitting={submitting} />
     </SafeAreaView>
   );
 }
@@ -669,15 +690,15 @@ function HarvestFormModal({ draft, onChange, onClose, onSubmit, selection, submi
 }
 
 function ReleaseFormModal({ batches, draft, onChange, onClose, onSubmit, submitting, visible }: { batches: HarvestBatch[]; draft: ReleaseDraft; onChange: (draft: ReleaseDraft) => void; onClose: () => void; onSubmit: () => void; submitting: boolean; visible: boolean }) {
-  return <Modal animationType="slide" onRequestClose={onClose} visible={visible}><SafeAreaView style={styles.modalSafeArea}><ModalHeader onClose={onClose} title="Tạo export release" /><ScrollView contentContainerStyle={styles.modalContent}>{!batches.length ? <EmptyState text="Cần lô thu hoạch thật trước khi tạo export release." /> : <View style={styles.formCard}><SelectorRow emptyText="Chưa có lô." label="Lô thu hoạch" onChange={(harvestBatchId) => onChange({ ...draft, harvestBatchId })} options={batches.map((batch) => ({ id: batch.id, label: batch.batchCode }))} selectedId={draft.harvestBatchId} /><FormInput label="Mã release" onChangeText={(releaseCode) => onChange({ ...draft, releaseCode })} value={draft.releaseCode} /><FormInput label="Thị trường mục tiêu" onChangeText={(targetMarketCode) => onChange({ ...draft, targetMarketCode })} value={draft.targetMarketCode} /><MessageCard compact kind="warning" message="Backend sẽ tự chạy compliance assessment và có thể tạo release ở trạng thái BLOCKED." /><SubmitButton label="Tạo release trên backend" onPress={onSubmit} submitting={submitting} /></View>}</ScrollView></SafeAreaView></Modal>;
+  return <Modal animationType="slide" onRequestClose={onClose} visible={visible}><SafeAreaView style={styles.modalSafeArea}><ModalHeader onClose={onClose} title="Tạo export release" /><ScrollView contentContainerStyle={styles.modalContent}>{!batches.length ? <EmptyState text="Cần lô thu hoạch thật trước khi tạo export release." /> : <View style={styles.formCard}><SelectorRow emptyText="Chưa có lô." label="Lô thu hoạch" onChange={(harvestBatchId) => onChange({ ...draft, harvestBatchId, targetMarketCode: batches.find((batch) => batch.id === harvestBatchId)?.expectedDestinationMarket ?? "" })} options={batches.map((batch) => ({ id: batch.id, label: batch.batchCode }))} selectedId={draft.harvestBatchId} /><FormInput label="Mã release" onChangeText={(releaseCode) => onChange({ ...draft, releaseCode })} value={draft.releaseCode} /><InfoRow label="Thị trường mục tiêu của lô" value={draft.targetMarketCode} /><MessageCard compact kind="warning" message="Backend sẽ tự chạy compliance assessment và có thể tạo release ở trạng thái BLOCKED." /><SubmitButton label="Tạo release trên backend" onPress={onSubmit} submitting={submitting} /></View>}</ScrollView></SafeAreaView></Modal>;
 }
 
-function ReleaseDetailModal({ onAction, onClose, release, snapshot, snapshotLoading, submitting }: { onAction: (release: ExportRelease, action: ReleaseAction, recallReason?: string) => void; onClose: () => void; release: ExportRelease | null; snapshot: TraceabilityResponse | null; snapshotLoading: boolean; submitting: boolean }) {
+function ReleaseDetailModal({ assessment, canApprove, onAction, onClose, release, snapshot, snapshotLoading, submitting }: { assessment: ComplianceAssessment | null; canApprove: boolean; onAction: (release: ExportRelease, action: ReleaseAction, recallReason?: string) => void; onClose: () => void; release: ExportRelease | null; snapshot: TraceabilityResponse | null; snapshotLoading: boolean; submitting: boolean }) {
   const [recallReason, setRecallReason] = useState("");
   if (!release) return null;
-  const actions = releaseActions(release);
+  const actions = releaseActions(release, canApprove);
   const rows = snapshotSummary(snapshot);
-  return <Modal animationType="slide" onRequestClose={onClose} visible><SafeAreaView style={styles.modalSafeArea}><ModalHeader onClose={onClose} title="Traceability snapshot" /><ScrollView contentContainerStyle={styles.modalContent}><View style={styles.detailPanel}><Text style={styles.detailTitle}>{release.releaseCode}</Text><StatusPill label={exportReleaseStatusLabels[release.status]} tone={getExportStatusTone(release.status)} /><InfoRow label="Release ID" value={release.id} /><InfoRow label="Harvest batch ID" value={release.harvestBatchId} /><InfoRow label="Target market" value={release.targetMarketCode} /><InfoRow label="Rejected/recall reason" value={release.rejectionReason || "Không có"} /></View><MessageCard kind="warning" message="Snapshot này là private API, yêu cầu auth và farm scope. Chưa có public QR/token contract nên Mobile không hiển thị QR công khai." />{snapshotLoading ? <LoadingCard /> : <View style={styles.detailPanel}><Text style={styles.sectionTitleSmall}>Snapshot từ backend</Text>{rows.length ? rows.map(([label, value]) => <InfoRow key={label} label={label} value={value} />) : <EmptyState text="Backend chưa trả snapshot hoặc release chưa có snapshot." />}</View>}{actions.some((action) => action.value === "recall") ? <FormInput label="Lý do thu hồi nếu chọn Recall" multiline onChangeText={setRecallReason} value={recallReason} /> : null}{actions.length ? <View style={styles.modalActions}>{actions.map((action) => <Pressable disabled={submitting} key={action.value} onPress={() => onAction(release, action.value, recallReason)} style={[styles.fullButton, action.value === "recall" && styles.dangerButton]}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Send color={durianTheme.colors.white} size={16} />}<Text style={styles.fullButtonText}>{action.label}</Text></Pressable>)}</View> : <EmptyState text="Không còn action workflow phù hợp với trạng thái hiện tại." />}</ScrollView></SafeAreaView></Modal>;
+  return <Modal animationType="slide" onRequestClose={onClose} visible><SafeAreaView style={styles.modalSafeArea}><ModalHeader onClose={onClose} title="Traceability snapshot" /><ScrollView contentContainerStyle={styles.modalContent}><View style={styles.detailPanel}><Text style={styles.detailTitle}>{release.releaseCode}</Text><StatusPill label={exportReleaseStatusLabels[release.status]} tone={getExportStatusTone(release.status)} /><InfoRow label="Release ID" value={release.id} /><InfoRow label="Harvest batch ID" value={release.harvestBatchId} /><InfoRow label="Target market" value={release.targetMarketCode} /><InfoRow label="Rejected/recall reason" value={release.rejectionReason || "Không có"} /></View><MessageCard kind="warning" message="Snapshot này là private API, yêu cầu auth và farm scope. Chưa có public QR/token contract nên Mobile không hiển thị QR công khai." />{assessment ? <View style={styles.detailPanel}><Text style={styles.sectionTitleSmall}>Compliance mới nhất</Text><InfoRow label="Đủ điều kiện" value={assessment.eligibleForExportRelease ? "Có" : "Không"} /><InfoRow label="Blocker" value={assessment.blockingReasons.join(", ") || "Không có"} /><InfoRow label="Cảnh báo" value={assessment.warnings.join(", ") || "Không có"} /></View> : null}{snapshotLoading ? <LoadingCard /> : <View style={styles.detailPanel}><Text style={styles.sectionTitleSmall}>Snapshot từ backend</Text>{rows.length ? rows.map(([label, value]) => <InfoRow key={label} label={label} value={value} />) : <EmptyState text="Backend chưa trả snapshot hoặc release chưa có snapshot." />}</View>}{actions.some((action) => action.value === "recall") ? <FormInput label="Lý do thu hồi nếu chọn Recall" multiline onChangeText={setRecallReason} value={recallReason} /> : null}{actions.length ? <View style={styles.modalActions}>{actions.map((action) => <Pressable disabled={submitting} key={action.value} onPress={() => onAction(release, action.value, recallReason)} style={[styles.fullButton, action.value === "recall" && styles.dangerButton]}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Send color={durianTheme.colors.white} size={16} />}<Text style={styles.fullButtonText}>{action.label}</Text></Pressable>)}</View> : <EmptyState text="Không còn action workflow phù hợp với trạng thái hiện tại." />}</ScrollView></SafeAreaView></Modal>;
 }
 
 function SelectorRow({ emptyText, label, onChange, options, selectedId }: { emptyText: string; label: string; onChange: (id: string) => void; options: Array<{ id: string; label: string }>; selectedId: string }) {

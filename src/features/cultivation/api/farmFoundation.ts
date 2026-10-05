@@ -132,6 +132,7 @@ export function buildFoundationSeasonOptions(data: CareFoundationData, farmId: s
   data.plans
     .filter((plan) => plan.farmId === farmId && plan.plotId === zoneId)
     .forEach((plan) => {
+      if (options.has(plan.cultivationSeasonId)) return;
       options.set(plan.cultivationSeasonId, {
         farmId,
         label: seasonLabelFromPlan(plan),

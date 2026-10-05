@@ -29,6 +29,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
+import { CompleteActivityModal } from "@/src/features/cultivation/CompleteActivityModal";
+import { groupHistoryRecords } from "@/src/features/cultivation/api/historyRecords";
 import { AuthApiError } from "@/src/features/auth/authApi";
 import {
   approveCultivationActivity,
@@ -86,6 +88,7 @@ import type {
   AgriculturalInput,
   ActivityExecution,
   ActivityInputUsage,
+  CompleteCultivationActivityRequest,
   AuthorizedFarm,
   CareFarmOption,
   CareHistoryResponse,
@@ -224,6 +227,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ACTIVE");
   const [selectedActivity, setSelectedActivity] = useState<CultivationActivity | null>(null);
+  const [completingActivity, setCompletingActivity] = useState<CultivationActivity | null>(null);
   const [activityDraft, setActivityDraft] = useState<ActivityDraft>(defaultActivityDraft);
   const [planDraft, setPlanDraft] = useState<PlanDraft>(defaultPlanDraft);
   const [farmSetupDraft, setFarmSetupDraft] = useState<FarmSetupDraft>(defaultFarmSetupDraft);
@@ -260,7 +264,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
       try {
         const [owned, authorized, plans, activities, inputs] = await Promise.allSettled([
           listOwnedFarms(),
-          listAuthorizedFarms(),
+          role === "FARMER" ? Promise.resolve([]) : listAuthorizedFarms(),
           listCultivationPlans(),
           listCultivationActivities(),
           listAgriculturalInputs({ status: "VERIFIED" }),
@@ -554,29 +558,37 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
   }
 
   async function changeStatus(activity: CultivationActivity, action: StatusAction) {
+    if (action === "complete") {
+      setSelectedActivity(null);
+      setCompletingActivity(activity);
+      return;
+    }
     setSubmitting(true);
     try {
       if (action === "start") await startCultivationActivity(activity.id);
       if (action === "skip") await skipCultivationActivity(activity.id);
       if (action === "cancel") await cancelCultivationActivity(activity.id);
-      if (action === "complete") {
-        const now = new Date().toISOString();
-        await completeCultivationActivity(activity.id, {
-          actualArea: 0,
-          actualTreeCount: 0,
-          completedAt: now,
-          evidenceFiles: [],
-          executedBy: actorId,
-          inputUsages: [],
-          startedAt: now,
-          weatherSnapshot: {},
-        });
-      }
       setSelectedActivity(null);
       setNotice("Đã cập nhật trạng thái công việc.");
       await loadData({ silent: true });
     } catch (caught) {
       setError(friendlyError(caught, "Không thể cập nhật trạng thái."));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function submitCompletion(id: string, payload: CompleteCultivationActivityRequest) {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await completeCultivationActivity(id, payload);
+      setNotice("Đã ghi nhật ký thực hiện.");
+      await loadData({ silent: true });
+      if (selection.seasonId) await loadCareHistory(selection.seasonId);
+    } catch (caught) {
+      setError(friendlyError(caught, "Không thể hoàn thành công việc."));
+      throw caught;
     } finally {
       setSubmitting(false);
     }
@@ -696,6 +708,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
         ) : null}
       </ScrollView>
       <ActivityDetailModal activity={selectedActivity} canExecute={canExecute} inputs={data.inputs} onApprove={approveActivity} onClose={() => setSelectedActivity(null)} onReject={openRejectActivity} onStatusChange={changeStatus} onUpdate={submitUpdateActivity} submitting={submitting} zones={zones} />
+      <CompleteActivityModal activity={completingActivity} actorId={actorId} actorName={session?.user.fullName ?? actorId} onClose={() => setCompletingActivity(null)} onSubmit={submitCompletion} />
       <FarmSetupModal draft={farmSetupDraft} farms={farms} onChange={setFarmSetupDraft} onClose={() => setShowFarmSetupForm(false)} onSubmit={submitFarmSetup} seasons={seasons} submitting={submitting} visible={showFarmSetupForm} zones={zones} />
       <ActivityFormModal draft={activityDraft} inputs={data.inputs} onChange={setActivityDraft} onClose={() => setShowActivityForm(false)} onSubmit={submitCreateActivity} plans={plans} submitting={submitting} visible={showActivityForm} />
       <PlanFormModal draft={planDraft} onChange={setPlanDraft} onClose={() => setShowPlanForm(false)} onSubmit={submitCreatePlan} selection={selection} submitting={submitting} visible={showPlanForm} />
@@ -722,19 +735,7 @@ function SelectorRow({ disabled, emptyText, label, onChange, options, selectedId
 }
 
 function CareHistoryView({ error, history, loading, onRetry }: { error: string | null; history: CareHistoryResponse; loading: boolean; onRetry: () => void }) {
-  const executionsByActivity = new Map<string, ActivityExecution[]>();
-  history.executions.forEach((execution) => {
-    const items = executionsByActivity.get(execution.cultivationActivityId) ?? [];
-    items.push(execution);
-    executionsByActivity.set(execution.cultivationActivityId, items);
-  });
-
-  const usageByExecution = new Map<string, ActivityInputUsage[]>();
-  history.inputUsages.forEach((usage) => {
-    const items = usageByExecution.get(usage.activityExecutionId) ?? [];
-    items.push(usage);
-    usageByExecution.set(usage.activityExecutionId, items);
-  });
+  const { executionsByActivity, usagesByExecution: usageByExecution } = groupHistoryRecords(history);
 
   const sortedActivities = [...history.activities].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   const hasHistory = sortedActivities.length > 0 || history.executions.length > 0 || history.inputUsages.length > 0;
@@ -789,11 +790,15 @@ function ExecutionBlock({ execution, usages }: { execution: ActivityExecution; u
           {usages.map((usage) => (
             <View key={usage.id} style={styles.usagePill}>
               <Text style={styles.usageText}>{usage.agriculturalInputSnapshot?.productName ?? usage.agriculturalInputId}</Text>
-              <Text style={styles.usageMeta}>{usage.quantityUsed} {usage.quantityUnit}{usage.calculatedSafeHarvestDate ? ` · safe ${formatDate(usage.calculatedSafeHarvestDate)}` : ""}</Text>
+              <Text style={styles.usageMeta}>{usage.agriculturalInputSnapshot?.category ?? "Chưa rõ loại"} · {usage.quantityUsed} {usage.quantityUnit}</Text>
+              {usage.batchNumber ? <Text style={styles.usageMeta}>Batch/Lot: {usage.batchNumber}</Text> : null}
+              {usage.activeIngredientSnapshots?.length ? <Text style={styles.usageMeta}>Hoạt chất: {usage.activeIngredientSnapshots.map((ingredient) => ingredient.name).join(", ")}</Text> : null}
+              {usage.agriculturalInputSnapshot?.preHarvestIntervalDays != null ? <Text style={styles.usageMeta}>PHI: {usage.agriculturalInputSnapshot.preHarvestIntervalDays} ngày</Text> : null}
+              {usage.calculatedSafeHarvestDate ? <Text style={styles.usageMeta}>Ngày an toàn dự kiến: {formatDate(usage.calculatedSafeHarvestDate)}</Text> : null}
             </View>
           ))}
         </View>
-      ) : null}
+      ) : <Text style={styles.emptyInline}>Không có dữ liệu vật tư được ghi nhận.</Text>}
     </View>
   );
 }
@@ -841,7 +846,7 @@ function ActivityDetailModal({ activity, canExecute, inputs, onApprove, onClose,
   const actions = statusActions(activity);
   const names = inputNames(activity, inputs);
   const reviewable = canReviewActivity(activity);
-  return <Modal animationType="slide" onRequestClose={onClose} visible><SafeAreaView style={styles.modalSafeArea}><View style={styles.modalHeader}><Pressable onPress={onClose} style={styles.modalIconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable><Text style={styles.modalTitle}>Chi tiết công việc</Text><Pressable onPress={() => setEditing((value) => !value)} style={styles.modalIconButton}><Edit3 color={durianTheme.colors.moss} size={18} /></Pressable></View><ScrollView contentContainerStyle={styles.modalContent}>{editing ? <View style={styles.formCard}><FormInput label="Tên công việc" onChangeText={(title) => setDraft({ ...draft, title })} value={draft.title} /><FormInput label="Mô tả" multiline onChangeText={(description) => setDraft({ ...draft, description })} value={draft.description} /><FormInput label="Bắt đầu (YYYY-MM-DDTHH:mm)" onChangeText={(scheduledStartAt) => setDraft({ ...draft, scheduledStartAt })} value={draft.scheduledStartAt} /><FormInput label="Kết thúc (YYYY-MM-DDTHH:mm)" onChangeText={(scheduledEndAt) => setDraft({ ...draft, scheduledEndAt })} value={draft.scheduledEndAt} /><Pressable disabled={submitting} onPress={() => onUpdate(activity, draft)} style={styles.fullButton}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Check color={durianTheme.colors.white} size={18} />}<Text style={styles.fullButtonText}>Lưu cập nhật</Text></Pressable></View> : <View style={styles.detailPanel}><Text style={styles.detailTitle}>{activity.title}</Text><StatusPill status={status} /><InfoRow label="Loại công việc" value={activityTypeLabels[activity.activityType]} /><InfoRow label="Thời gian bắt đầu" value={formatDateTime(activity.scheduledStartAt)} /><InfoRow label="Thời gian kết thúc" value={formatDateTime(activity.scheduledEndAt)} /><InfoRow label="Khu canh tác" value={zoneLabel} /><InfoRow label="Farm ID" value={activity.farmId} /><InfoRow label="Season ID" value={activity.cultivationSeasonId} /><InfoRow label="Plan ID" value={activity.cultivationPlanId} /><InfoRow label="Người được giao" value={activity.assignedUserIds.join(", ") || "Chưa gán"} /><InfoRow label="Phê duyệt" value={activity.approvalRequired ? "Cần phê duyệt" : "Không yêu cầu"} />{activity.approvedAt ? <InfoRow label="Đã duyệt lúc" value={formatDateTime(activity.approvedAt)} /> : null}{activity.approvedBy ? <InfoRow label="Người duyệt/từ chối" value={activity.approvedBy} /> : null}{activity.rejectionReason ? <InfoRow label="Lý do từ chối" value={activity.rejectionReason} /> : null}<InfoRow label="Vật tư" value={names.join(", ") || "Chưa gắn vật tư"} /><InfoRow label="Tạo lúc" value={formatDateTime(activity.createdAt)} /><InfoRow label="Cập nhật lúc" value={formatDateTime(activity.updatedAt)} />{activity.description ? <Text style={styles.detailDescription}>{activity.description}</Text> : null}</View>}{!editing && canExecute && reviewable ? <View style={styles.modalActions}><Pressable disabled={submitting} onPress={() => onApprove(activity)} style={styles.fullButton}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Check color={durianTheme.colors.white} size={18} />}<Text style={styles.fullButtonText}>Phê duyệt công việc</Text></Pressable><Pressable disabled={submitting} onPress={() => onReject(activity)} style={styles.fullButtonDanger}><Text style={styles.fullButtonDangerText}>Từ chối công việc</Text></Pressable></View> : null}{!editing && canExecute && actions.length ? <View style={styles.modalActions}>{actions.map((action) => <Pressable disabled={submitting} key={action.value} onPress={() => onStatusChange(activity, action.value)} style={styles.fullButtonSecondary}><Text style={styles.fullButtonSecondaryText}>{action.label}</Text></Pressable>)}</View> : null}</ScrollView></SafeAreaView></Modal>;
+  return <Modal animationType="slide" onRequestClose={onClose} visible><SafeAreaView style={styles.modalSafeArea}><View style={styles.modalHeader}><Pressable onPress={onClose} style={styles.modalIconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable><Text style={styles.modalTitle}>Chi tiết công việc</Text>{activity.status !== "COMPLETED" && activity.status !== "CANCELLED" ? <Pressable onPress={() => setEditing((value) => !value)} style={styles.modalIconButton}><Edit3 color={durianTheme.colors.moss} size={18} /></Pressable> : <View style={styles.modalIconButton} />}</View><ScrollView contentContainerStyle={styles.modalContent}>{editing ? <View style={styles.formCard}><FormInput label="Tên công việc" onChangeText={(title) => setDraft({ ...draft, title })} value={draft.title} /><FormInput label="Mô tả" multiline onChangeText={(description) => setDraft({ ...draft, description })} value={draft.description} /><FormInput label="Bắt đầu (YYYY-MM-DDTHH:mm)" onChangeText={(scheduledStartAt) => setDraft({ ...draft, scheduledStartAt })} value={draft.scheduledStartAt} /><FormInput label="Kết thúc (YYYY-MM-DDTHH:mm)" onChangeText={(scheduledEndAt) => setDraft({ ...draft, scheduledEndAt })} value={draft.scheduledEndAt} /><Pressable disabled={submitting} onPress={() => onUpdate(activity, draft)} style={styles.fullButton}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Check color={durianTheme.colors.white} size={18} />}<Text style={styles.fullButtonText}>Lưu cập nhật</Text></Pressable></View> : <View style={styles.detailPanel}><Text style={styles.detailTitle}>{activity.title}</Text><StatusPill status={status} /><InfoRow label="Loại công việc" value={activityTypeLabels[activity.activityType]} /><InfoRow label="Thời gian bắt đầu" value={formatDateTime(activity.scheduledStartAt)} /><InfoRow label="Thời gian kết thúc" value={formatDateTime(activity.scheduledEndAt)} /><InfoRow label="Khu canh tác" value={zoneLabel} /><InfoRow label="Farm ID" value={activity.farmId} /><InfoRow label="Season ID" value={activity.cultivationSeasonId} /><InfoRow label="Plan ID" value={activity.cultivationPlanId} /><InfoRow label="Người được giao" value={activity.assignedUserIds.join(", ") || "Chưa gán"} /><InfoRow label="Phê duyệt" value={activity.approvalRequired ? "Cần phê duyệt" : "Không yêu cầu"} />{activity.approvedAt ? <InfoRow label="Đã duyệt lúc" value={formatDateTime(activity.approvedAt)} /> : null}{activity.approvedBy ? <InfoRow label="Người duyệt/từ chối" value={activity.approvedBy} /> : null}{activity.rejectionReason ? <InfoRow label="Lý do từ chối" value={activity.rejectionReason} /> : null}<InfoRow label="Vật tư" value={names.join(", ") || "Chưa gắn vật tư"} /><InfoRow label="Tạo lúc" value={formatDateTime(activity.createdAt)} /><InfoRow label="Cập nhật lúc" value={formatDateTime(activity.updatedAt)} />{activity.description ? <Text style={styles.detailDescription}>{activity.description}</Text> : null}</View>}{!editing && canExecute && reviewable ? <View style={styles.modalActions}><Pressable disabled={submitting} onPress={() => onApprove(activity)} style={styles.fullButton}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Check color={durianTheme.colors.white} size={18} />}<Text style={styles.fullButtonText}>Phê duyệt công việc</Text></Pressable><Pressable disabled={submitting} onPress={() => onReject(activity)} style={styles.fullButtonDanger}><Text style={styles.fullButtonDangerText}>Từ chối công việc</Text></Pressable></View> : null}{!editing && canExecute && actions.length ? <View style={styles.modalActions}>{actions.map((action) => <Pressable disabled={submitting} key={action.value} onPress={() => onStatusChange(activity, action.value)} style={styles.fullButtonSecondary}><Text style={styles.fullButtonSecondaryText}>{action.label}</Text></Pressable>)}</View> : null}</ScrollView></SafeAreaView></Modal>;
 }
 
 function RejectActivityModal({ draft, onChangeReason, onClose, onSubmit, submitting }: { draft: RejectDraft | null; onChangeReason: (reason: string) => void; onClose: () => void; onSubmit: () => void; submitting: boolean }) {

@@ -124,7 +124,7 @@ export function DurianOperationsScreen() {
       notificationsResult,
       chatResult,
     ] = await Promise.allSettled([
-      listAuthorizedFarms(),
+      user.backendRole === "FARMER" ? Promise.resolve([]) : listAuthorizedFarms(),
       listOwnedFarms(),
       listCultivationPlans(),
       listCultivationActivities(),
@@ -136,17 +136,23 @@ export function DurianOperationsScreen() {
     ]);
 
     setData({
-      activities: settledValue(activitiesResult, []),
-      authorizedFarms: settledValue(authorizedFarmsResult, []),
-      chatConversations: settledValue(chatResult, { conversations: [] }).conversations,
-      diagnoses: settledValue(diagnosesResult, []),
+      activities: normalizeListResponse(settledValue(activitiesResult, [])),
+      authorizedFarms: normalizeListResponse(settledValue(authorizedFarmsResult, [])),
+      chatConversations: normalizeListResponse<ChatConversation>(
+        settledValue(chatResult, { conversations: [] })?.conversations,
+      ),
+      diagnoses: normalizeListResponse(settledValue(diagnosesResult, [])),
       iotDevices: normalizeListResponse(settledValue(iotDevicesResult, { devices: [] }).devices),
       notificationCount:
-        notificationCountResult.status === "fulfilled" ? notificationCountResult.value.count : null,
-      notifications:
-        notificationsResult.status === "fulfilled" ? notificationsResult.value.notifications : [],
-      ownedFarms: settledValue(ownedFarmsResult, []),
-      plans: settledValue(plansResult, []),
+        notificationCountResult.status === "fulfilled" &&
+        typeof notificationCountResult.value?.count === "number"
+          ? notificationCountResult.value.count
+          : null,
+      notifications: normalizeListResponse(
+        notificationsResult.status === "fulfilled" ? notificationsResult.value?.notifications : [],
+      ),
+      ownedFarms: normalizeListResponse(settledValue(ownedFarmsResult, [])),
+      plans: normalizeListResponse(settledValue(plansResult, [])),
     });
     setErrors({
       activities: settledError(activitiesResult),

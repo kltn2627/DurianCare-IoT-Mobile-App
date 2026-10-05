@@ -435,36 +435,33 @@ export async function createExportRelease(body: CreateExportReleaseRequest) {
   return response.data;
 }
 
-export async function submitExportRelease(id: string, userId: string) {
+export async function submitExportRelease(id: string) {
   const response = await authorizedRequest<ExportRelease>({
-    data: { userId },
     method: "POST",
     url: `/api/v1/export-releases/${encodeURIComponent(id)}/submit`,
   });
   return response.data;
 }
 
-export async function approveExportRelease(id: string, userId: string) {
+export async function approveExportRelease(id: string) {
   const response = await authorizedRequest<ExportRelease>({
-    data: { userId },
     method: "POST",
     url: `/api/v1/export-releases/${encodeURIComponent(id)}/approve`,
   });
   return response.data;
 }
 
-export async function releaseExportRelease(id: string, userId: string) {
+export async function releaseExportRelease(id: string) {
   const response = await authorizedRequest<ExportRelease>({
-    data: { userId },
     method: "POST",
     url: `/api/v1/export-releases/${encodeURIComponent(id)}/release`,
   });
   return response.data;
 }
 
-export async function recallExportRelease(id: string, userId: string, reason: string) {
+export async function recallExportRelease(id: string, reason: string) {
   const response = await authorizedRequest<ExportRelease>({
-    data: { reason, userId },
+    data: { reason },
     method: "POST",
     url: `/api/v1/export-releases/${encodeURIComponent(id)}/recall`,
   });

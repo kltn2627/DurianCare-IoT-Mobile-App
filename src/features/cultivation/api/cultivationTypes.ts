@@ -91,6 +91,7 @@ export type FarmZoneStatus = "ACTIVE" | "INACTIVE" | "QUARANTINED" | "ARCHIVED";
 export type FarmStatus = "ACTIVE" | "INACTIVE" | "ARCHIVED";
 
 export type FarmZoneCatalog = {
+  agronomy?: import("./zoneAgronomy").FarmZoneAgronomy | null;
   areaSquareMeters?: number | null;
   boundaryGeoJson?: Record<string, unknown> | null;
   code?: string | null;
@@ -147,6 +148,8 @@ export type UpdateFarmRequest = Partial<CreateFarmRequest> & {
 };
 
 export type CreateFarmZoneRequest = {
+  agronomy?: import("./zoneAgronomy").FarmZoneAgronomy | null;
+  status?: FarmZoneStatus;
   areaSquareMeters?: number | null;
   boundaryGeoJson?: Record<string, unknown> | null;
   code?: string | null;
@@ -487,6 +490,7 @@ export type LabSample = {
   sampledBy: string;
   samplingLocation?: string | null;
   status: LabSampleStatus;
+  expectedActiveIngredientCodes?: string[];
 };
 
 export type LabResidueResult = {
@@ -494,6 +498,12 @@ export type LabResidueResult = {
   activeIngredientName: string;
   applicableMrl?: number | null;
   applicableMrlSource?: string | null;
+  residueStandardId?: string | null;
+  mrlUnit?: string | null;
+  standardEffectiveFrom?: string | null;
+  standardEffectiveTo?: string | null;
+  standardSourceType?: SourceType | null;
+  evaluationPolicyVersion?: string | null;
   createdAt: string;
   detectionLimit?: number | null;
   id: string;
@@ -525,7 +535,7 @@ export type HarvestBatch = {
 
 export type CreateHarvestBatchRequest = {
   batchCode: string;
-  createdBy: string;
+  createdBy?: string;
   cultivationSeasonId: string;
   expectedDestinationMarket: string;
   farmId: string;
@@ -557,7 +567,7 @@ export type ExportRelease = {
 export type CreateExportReleaseRequest = {
   harvestBatchId: string;
   releaseCode: string;
-  submittedBy: string;
+  submittedBy?: string;
   targetMarketCode: string;
 };
 
@@ -575,5 +585,8 @@ export type TraceabilitySnapshot = {
 
 export type TraceabilityResponse = {
   releaseId: string;
+  status: ExportReleaseStatus;
+  recalledAt?: string | null;
+  recallReason?: string | null;
   snapshot: TraceabilitySnapshot;
 };

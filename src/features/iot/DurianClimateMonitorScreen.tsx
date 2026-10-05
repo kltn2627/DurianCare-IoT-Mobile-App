@@ -96,6 +96,7 @@ export function DurianClimateMonitorScreen() {
   const { width } = useWindowDimensions();
   const [devices, setDevices] = useState<IotDevice[]>([]);
   const [alerts, setAlerts] = useState<IotAlert[]>([]);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [latest, setLatest] = useState<IotTelemetryReading | null>(null);
   const [history, setHistory] = useState<IotTelemetryReading[]>([]);
@@ -162,7 +163,7 @@ export function DurianClimateMonitorScreen() {
     setError(null);
     try {
       const response = await iotApi.listDevices();
-      const nextDevices = Array.isArray(response.devices) ? response.devices : [];
+      const nextDevices = Array.isArray(response?.devices) ? response.devices : [];
       setDevices(nextDevices);
       const nextDeviceId = nextDevices.some((device) => device.id === selectedDeviceId)
         ? selectedDeviceId
@@ -182,9 +183,14 @@ export function DurianClimateMonitorScreen() {
   const loadAlerts = useCallback(async () => {
     try {
       const response = await iotApi.listAlerts("ALERTING");
+      if (!Array.isArray(response?.alerts)) {
+        throw new Error("Dữ liệu cảnh báo không hợp lệ. Vui lòng tải lại.");
+      }
       setAlerts(response.alerts);
-    } catch {
+      setAlertsError(null);
+    } catch (loadError) {
       setAlerts([]);
+      setAlertsError(messageFromError(loadError));
     }
   }, []);
 
@@ -197,8 +203,8 @@ export function DurianClimateMonitorScreen() {
         iotApi.latestTelemetry(deviceId),
         iotApi.telemetryHistory(deviceId, { limit: HISTORY_LIMIT }),
       ]);
-      setLatest(latestResponse.telemetry);
-      setHistory(historyResponse.telemetry);
+      setLatest(latestResponse?.telemetry ?? null);
+      setHistory(Array.isArray(historyResponse?.telemetry) ? historyResponse.telemetry : []);
     } catch (loadError) {
       setError(messageFromError(loadError));
     } finally {
@@ -400,7 +406,7 @@ export function DurianClimateMonitorScreen() {
           submitting={submitting}
         />
 
-        <AlertListCard alerts={alerts} onAcknowledge={acknowledgeAlert} submitting={submitting} />
+        <AlertListCard alerts={alerts} error={alertsError} onAcknowledge={acknowledgeAlert} submitting={submitting} />
 
         <View style={styles.metricGrid}>
           {METRICS.map((metric) => (
@@ -465,20 +471,25 @@ function DeviceChip({
 
 function AlertListCard({
   alerts,
+  error,
   onAcknowledge,
   submitting,
 }: {
-  alerts: IotAlert[];
+  alerts?: IotAlert[] | null;
+  error?: string | null;
   onAcknowledge: (alertId: string) => void;
   submitting: boolean;
 }) {
+  const safeAlerts = Array.isArray(alerts) ? alerts : [];
   return (
     <View style={styles.chartCard}>
       <SectionHeading caption="Nguồn thật từ /api/iot/alerts?status=ALERTING" title="Cảnh báo IoT" />
-      {alerts.length === 0 ? (
+      {error ? (
+        <Text style={styles.errorText}>Không thể tải cảnh báo IoT: {error}</Text>
+      ) : safeAlerts.length === 0 ? (
         <Text style={styles.emptyText}>Không có alert IoT đang mở.</Text>
       ) : (
-        alerts.slice(0, 5).map((alert) => (
+        safeAlerts.slice(0, 5).map((alert) => (
           <View key={alert.id} style={styles.alertRow}>
             <View style={styles.alertIcon}>
               <Bell color={durianTheme.colors.warning} size={18} />
