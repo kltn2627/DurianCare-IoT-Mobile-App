@@ -11,7 +11,9 @@ export type ChatMessage = {
   body: string;
   createdAt: string;
   id: string;
-  kind: "text" | "scan-alert" | "protocol" | "bot";
+  imageUri?: string;
+  kind: "text" | "scan-alert" | "protocol" | "bot" | "image" | "location";
   protocol?: ProtocolDay[];
   role: UserRole | "BOT";
+  zoneLabel?: string;
 };
