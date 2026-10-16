@@ -67,6 +67,9 @@ export type HarvestBatchStatus =
   | "CANCELLED";
 
 export type ExportReleaseStatus =
+  | "INSPECTION_PENDING"
+  | "NOT_ELIGIBLE"
+  | "INSPECTED_PASSED"
   | "DRAFT"
   | "UNDER_REVIEW"
   | "WAITING_FOR_LAB_RESULT"
@@ -118,16 +121,21 @@ export type FarmCatalog = {
   zones: FarmZoneCatalog[];
 };
 
+export type CultivationSeasonStatus = "PREPARING" | "IN_PROGRESS" | "ENDED";
+
 export type CultivationSeason = {
+  productionStatus?: "IN_PROGRESS" | "HARVESTED" | "COMPLETED";
   createdAt?: string | null;
   createdBy: string;
   crop?: string | null;
+  effectiveStatus?: CultivationSeasonStatus | null;
   endDate?: string | null;
   farmId: string;
   id: string;
   name: string;
   plotId: string;
   startDate: string;
+  status?: CultivationSeasonStatus | null;
   updatedAt?: string | null;
   variety?: string | null;
 };
@@ -515,6 +523,7 @@ export type LabResidueResult = {
 };
 
 export type HarvestBatch = {
+  dataOrigin?: "OPERATIONAL" | "DEMO_SYNTHETIC";
   batchCode: string;
   chemicalRiskLevel: RiskLevel;
   createdAt: string;
@@ -546,6 +555,7 @@ export type CreateHarvestBatchRequest = {
 };
 
 export type ExportRelease = {
+  dataOrigin?: "OPERATIONAL" | "DEMO_SYNTHETIC";
   complianceAssessmentSnapshot?: Record<string, unknown> | null;
   createdAt: string;
   harvestBatchId: string;
