@@ -1,0 +1,59 @@
+name: Mobile CI
+
+# PRs into dev/main are the gate; pushes to dev/main re-check the merged result.
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  push:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, tests and Android bundle export
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24 with npm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies (lockfile)
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: node --test tests/*.cjs
+
+      # Bundles the JS for Android to catch import/bundling errors. No signing,
+      # keystore, EAS or store credentials; the output is discarded.
+      # A placeholder API URL is used only so the bundle has a value to inline.
+      - name: Expo export (Android JS bundle)
+        env:
+          EXPO_PUBLIC_API_BASE_URL: http://ci.invalid:8080
+        run: npx expo export --platform android --output-dir "${{ runner.temp }}/expo-export"
+
+      # Informational: currently reports 4 packages a patch behind the Expo SDK
+      # recommendation; kept non-blocking until those are upgraded deliberately.
+      - name: Expo doctor (informational)
+        continue-on-error: true
+        run: npm run doctor

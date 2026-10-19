@@ -152,6 +152,9 @@ export function getSnapshotUrl(deviceId: string): string {
 // ── Camera Device Registry ────────────────────────────────────────────────────
 
 export type CameraDevice = {
+  status: "ONLINE" | "OFFLINE" | "UNKNOWN";
+  endpointVersion: string;
+  snapshotUrl: string;
   id:               string;
   device_id:        string;
   mac_address:      string | null;
@@ -198,12 +201,20 @@ export async function pingCamera(deviceId: string): Promise<boolean> {
   try {
     const res = await fetch(
       `${base}/api/v1/camera/snapshot?device_id=${encodeURIComponent(deviceId)}`,
-      { method: "HEAD", headers, signal: AbortSignal.timeout(8_000) },
+      { method: "GET", headers, signal: AbortSignal.timeout(8_000) },
     );
-    return res.status < 500;
+    return res.ok && res.headers.get("content-type")?.split(";")[0] === "image/jpeg" && (await res.blob()).size >= 4;
   } catch {
     return false;
   }
+}
+
+export function cameraSnapshotSource(deviceId: string, version: string, tick: number, snapshotPath?: string): { uri: string; headers: Record<string, string> } {
+  const tokens = getCachedAuthTokens();
+  const expectedPath = `/api/v1/camera/snapshot?device_id=${encodeURIComponent(deviceId)}`;
+  const path = snapshotPath === expectedPath ? snapshotPath : expectedPath;
+  return { uri: `${getApiBaseUrl()}${path}&v=${encodeURIComponent(version)}&t=${tick}`,
+    headers: tokens?.accessToken ? { Authorization: `Bearer ${tokens.accessToken}` } : {} };
 }
 
 // ── Export Assessment API ─────────────────────────────────────────────────────

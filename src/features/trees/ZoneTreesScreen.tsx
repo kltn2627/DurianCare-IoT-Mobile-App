@@ -20,7 +20,10 @@ import { getZone, listTrees, getZoneSafety } from "./treeApi";
 import type { TreeSummary, ZoneDetail, ZoneSafetySummary } from "./treeTypes";
 import { TreeDetailContent } from "./TreeDetailScreen";
 import { listCultivationSeasons, getSafeHarvestDate } from "@/src/features/cultivation/api/cultivationApi";
-import type { CultivationSeason } from "@/src/features/cultivation/api/cultivationTypes";
+import type {
+  CultivationSeason,
+  CultivationSeasonStatus,
+} from "@/src/features/cultivation/api/cultivationTypes";
 
 const HEALTH_COLORS: Record<string, string> = {
   HEALTHY: "#22c55e",
@@ -205,6 +208,8 @@ function ActiveSeasonBanner({
           (new Date(safeHarvestDate).getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
         )
       : null;
+  const status = season.effectiveStatus ?? season.status ?? getSeasonStatus(season, todayStr);
+  const statusLabel = seasonStatusLabels[status];
 
   return (
     <View style={styles.seasonBanner}>
@@ -219,6 +224,7 @@ function ActiveSeasonBanner({
             </Text>
           ) : null}
           <Text style={styles.seasonHarvest}>Thu hoạch dự kiến: {endLabel}</Text>
+          <Text style={styles.seasonStatus}>{statusLabel}</Text>
           {safeHarvestDate !== undefined ? (
             isSafeNow ? (
               <Text style={styles.seasonSafeOk}>✓ Đủ điều kiện thu hoạch (từ {safeLabel})</Text>
@@ -240,6 +246,18 @@ function ActiveSeasonBanner({
       ) : null}
     </View>
   );
+}
+
+const seasonStatusLabels: Record<CultivationSeasonStatus, string> = {
+  PREPARING: "Đang chuẩn bị",
+  IN_PROGRESS: "Đang diễn ra",
+  ENDED: "Đã kết thúc",
+};
+
+function getSeasonStatus(season: CultivationSeason, today: string): CultivationSeasonStatus {
+  if (season.endDate && season.endDate < today) return "ENDED";
+  if (season.startDate > today) return "PREPARING";
+  return "IN_PROGRESS";
 }
 
 interface Props {
@@ -407,6 +425,13 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
                       listTrees(zoneId).then(setTrees).catch(() => {});
                       getZoneSafety(zoneId).then((s) => { if (s) setSafety(s); }).catch(() => {});
                     }}
+                    onRemoved={() => {
+                      setSelectedId(null);
+                      setSheetTreeId(null);
+                      listTrees(zoneId).then(setTrees).catch(() => {});
+                      getZone(zoneId).then(setZone).catch(() => {});
+                      getZoneSafety(zoneId).then((s) => { if (s) setSafety(s); }).catch(() => {});
+                    }}
                   />
                 ) : null}
               </View>
@@ -502,6 +527,7 @@ const styles = StyleSheet.create({
   seasonName: { fontSize: 14, fontWeight: "800", color: durianTheme.colors.ink },
   seasonMeta: { fontSize: 11, color: "#4b7c5e" },
   seasonHarvest: { fontSize: 11, color: durianTheme.colors.muted, marginTop: 2 },
+  seasonStatus: { fontSize: 11, color: durianTheme.colors.moss, fontWeight: "800", marginTop: 3 },
   seasonSafeOk: { fontSize: 11, color: "#15803d", fontWeight: "700", marginTop: 3 },
   seasonSafeWait: { fontSize: 11, color: "#b45309", fontWeight: "700", marginTop: 3 },
   seasonSafeUnknown: { fontSize: 11, color: "#9ca3af", marginTop: 3 },
@@ -620,7 +646,7 @@ const styles = StyleSheet.create({
 
   // Inline tree detail sheet
   sheetOverlay: { flex: 1, justifyContent: "flex-end" },
-  sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
+  sheetBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.45)" },
   sheetContainer: {
     backgroundColor: durianTheme.colors.surface,
     borderTopLeftRadius: 24,

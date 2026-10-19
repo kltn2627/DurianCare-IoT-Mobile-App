@@ -14,6 +14,7 @@ import {
   XCircle,
 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
@@ -34,7 +35,8 @@ import {
   captureNow,
   fetchCameraHistory,
   getCameraDevice,
-  getSnapshotUrl,
+  listCameraDevices,
+  cameraSnapshotSource,
   pingCamera,
   updateCameraConfig,
   type CameraCapture,
@@ -43,8 +45,7 @@ import {
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const DEVICE_ID    = "ESP32-CAM-001";
-const PREVIEW_POLL = 3_000;
+const PREVIEW_POLL = 8_000;
 
 const DISEASE_NAMES: Record<string, string> = {
   ALGAL_LEAF_SPOT:     "Đốm rong tảo",
@@ -290,14 +291,14 @@ function CameraConfigModal({
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, gap: 14 }}>
             <Text style={styles.configLabel}>
               Nhập URL mới của ESP32-CAM khi đổi mạng Wi-Fi.{"\n"}
-              Ví dụ: <Text style={{ fontFamily: "monospace", color: durianTheme.colors.moss }}>http://192.168.1.137</Text>
+              Ví dụ: <Text style={{ fontFamily: "monospace", color: durianTheme.colors.moss }}>http://camera.local</Text>
             </Text>
 
             <View style={styles.configInputRow}>
               <TextInput
                 value={url}
                 onChangeText={(t) => { setUrl(t); setPingResult(null); setSaveError(null); }}
-                placeholder="http://192.168.1.xxx"
+                placeholder="http://camera.local"
                 placeholderTextColor={durianTheme.colors.mist}
                 style={styles.configInput}
                 autoCapitalize="none"
@@ -364,16 +365,34 @@ function CameraConfigModal({
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export function CameraMonitorScreen() {
+  const [deviceId, setDeviceId] = useState("");
+  const [devices, setDevices] = useState<CameraDevice[]>([]);
+  const [registryError, setRegistryError] = useState<string | null>(null);
+  const requestGeneration = useRef(0);
   const [previewKey, setPreviewKey] = useState(Date.now());
   const [snapshotError, setSnapshotError] = useState(false);
 
   // Device status from camera registry (online/offline indicator)
   const [deviceInfo, setDeviceInfo] = useState<CameraDevice | null>(null);
-  useEffect(() => {
-    getCameraDevice(DEVICE_ID)
-      .then((r) => setDeviceInfo(r.device))
-      .catch(() => { /* device not yet registered — status unknown */ });
-  }, []);
+  useFocusEffect(useCallback(() => {
+    let active = true, busy = false;
+    const poll = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const r = await listCameraDevices();
+        if (!active) return;
+        setDevices(r.devices);
+        setRegistryError(null);
+        setDeviceId(current => r.devices.some(row => row.device_id === current) ? current : r.devices[0]?.device_id ?? "");
+      } catch { if (active) setRegistryError("Không tải được trạng thái camera."); }
+      finally { busy = false; }
+    };
+    void poll();
+    const timer = setInterval(poll, PREVIEW_POLL);
+    return () => { active = false; clearInterval(timer); };
+  }, []));
+  useEffect(() => { setDeviceInfo(devices.find(row => row.device_id === deviceId) ?? null); }, [deviceId, devices]);
 
   const [configVisible, setConfigVisible] = useState(false);
 
@@ -381,37 +400,49 @@ export function CameraMonitorScreen() {
   const [captureResult, setCaptureResult] = useState<CameraCapture | null>(null);
   const [captureError, setCaptureError]   = useState<string | null>(null);
   const stepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useFocusEffect(useCallback(() => {
+    setCaptureStep("idle");
+    return () => { if (stepTimerRef.current) clearTimeout(stepTimerRef.current); };
+  }, [deviceId]));
 
   const [history, setHistory]       = useState<CameraCapture[]>([]);
   const [histLoading, setHistLoading] = useState(true);
   const [enlarged, setEnlarged]     = useState<CameraCapture | null>(null);
 
-  const snapshotUrl = getSnapshotUrl(DEVICE_ID);
+  const endpointVersion = deviceInfo?.endpointVersion ?? "";
 
-  // Auto-refresh preview every 3s
-  useEffect(() => {
+  // Poll snapshots only while the screen is focused.
+  useFocusEffect(useCallback(() => {
+    setSnapshotError(false);
+    requestGeneration.current += 1;
+    setPreviewKey(Date.now());
     const id = setInterval(() => setPreviewKey(Date.now()), PREVIEW_POLL);
-    return () => clearInterval(id);
-  }, []);
+    return () => { requestGeneration.current += 1; clearInterval(id); };
+  }, [deviceId, endpointVersion]));
 
   const loadHistory = useCallback(async () => {
+    const generation = requestGeneration.current;
     setHistLoading(true);
     try {
-      const res = await fetchCameraHistory({ device_id: DEVICE_ID, limit: 12 });
+      if (!deviceId) { setHistory([]); return; }
+      const res = await fetchCameraHistory({ device_id: deviceId, limit: 12 });
+      if (generation !== requestGeneration.current) return;
       setHistory(res.data);
     } catch { /* non-critical */ }
     finally { setHistLoading(false); }
-  }, []);
+  }, [deviceId]);
 
   useEffect(() => { void loadHistory(); }, [loadHistory]);
 
   const handleCapture = async () => {
+    const generation = requestGeneration.current;
     setCaptureStep("capturing");
     setCaptureResult(null);
     setCaptureError(null);
     stepTimerRef.current = setTimeout(() => setCaptureStep("analyzing"), 2_000);
     try {
-      const cap = await captureNow(DEVICE_ID);
+      const cap = await captureNow(deviceId);
+      if (generation !== requestGeneration.current) return;
       setCaptureResult(cap);
       setEnlarged(cap);
       void loadHistory();
@@ -435,10 +466,17 @@ export function CameraMonitorScreen() {
           subtitle="Chụp ảnh lá, nhận kết quả AI ngay lập tức."
         />
 
-        {/* Live preview */}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {devices.map(row => <Pressable key={row.device_id} onPress={() => setDeviceId(row.device_id)}
+            accessibilityRole="button" accessibilityState={{ selected: row.device_id === deviceId }}>
+            <Text>{row.device_id}</Text>
+          </Pressable>)}
+        </View>
+        {registryError ? <Text accessibilityRole="alert">{registryError}</Text> : null}
+        {/* Snapshot preview */}
         <View style={styles.previewCard}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-            <Text style={styles.cardLabel}>Xem trực tiếp · {DEVICE_ID}</Text>
+            <Text style={styles.cardLabel}>Ảnh camera định kỳ · {deviceId || "Chưa có camera"}</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               {deviceInfo != null && (
                 <View style={{
@@ -461,6 +499,9 @@ export function CameraMonitorScreen() {
             </View>
           </View>
           <View style={styles.previewBox}>
+            {!deviceInfo || deviceInfo.status !== "ONLINE" ? <Text style={styles.previewErrorText}>
+              {deviceInfo ? `Trạng thái đăng ký: ${deviceInfo.status}` : "Chưa có camera được cấp quyền."}
+            </Text> : null}
             {isCapturing && (
               <View style={styles.captureOverlay}>
                 <ActivityIndicator color={durianTheme.colors.durianYellow} size="large" />
@@ -469,13 +510,14 @@ export function CameraMonitorScreen() {
                 </Text>
               </View>
             )}
-            {!isCapturing && (
+            {!isCapturing && deviceId && deviceInfo?.status === "ONLINE" && (
               <Image
-                key={previewKey}
-                source={{ uri: `${snapshotUrl}&t=${previewKey}` }}
+                key={`${deviceId}:${endpointVersion}:${previewKey}`}
+                source={cameraSnapshotSource(deviceId, endpointVersion, previewKey, deviceInfo?.snapshotUrl)}
                 style={styles.previewImg}
                 resizeMode="cover"
                 onError={() => setSnapshotError(true)}
+                onLoad={() => setSnapshotError(false)}
               />
             )}
             {snapshotError && !isCapturing && (
@@ -489,7 +531,7 @@ export function CameraMonitorScreen() {
           {/* Capture button */}
           <Pressable
             onPress={handleCapture}
-            disabled={isCapturing}
+            disabled={isCapturing || !deviceId || deviceInfo?.status !== "ONLINE"}
             style={({ pressed }) => [styles.captureBtn, pressed && styles.pressed, isCapturing && styles.disabled]}
           >
             {isCapturing
@@ -568,12 +610,12 @@ export function CameraMonitorScreen() {
       <DiagnosisModal capture={enlarged} onClose={() => setEnlarged(null)} />
 
       <CameraConfigModal
-        deviceId={DEVICE_ID}
+        deviceId={deviceId}
         visible={configVisible}
         onClose={() => setConfigVisible(false)}
         onSaved={() => {
           setPreviewKey(Date.now());
-          void getCameraDevice(DEVICE_ID).then((r) => setDeviceInfo(r.device)).catch(() => {});
+          void getCameraDevice(deviceId).then((r) => setDeviceInfo(r.device)).catch(() => {});
         }}
       />
     </SafeAreaView>
