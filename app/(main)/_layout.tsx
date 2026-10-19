@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import type { BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs";
+import type { ComponentProps } from "react";
 import {
   CalendarDays,
   Camera,
@@ -16,6 +16,7 @@ import { useSession } from "@/src/session/SessionContext";
 import { durianTheme } from "@/src/theme/durianTheme";
 
 type PrimaryTab = "index" | "farm" | "calendar" | "scanner" | "more";
+type DurianBottomTabBarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>["tabBar"]>>[0];
 
 const tabItems: Array<{
   accessibilityLabel: string;
@@ -37,7 +38,7 @@ function activePrimaryTab(routeName: string | undefined): PrimaryTab {
   return "more";
 }
 
-function DurianBottomTabBar({ navigation, state }: BottomTabBarProps) {
+function DurianBottomTabBar({ navigation, state }: DurianBottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const routeName = state.routes[state.index]?.name;
   const activeTab = activePrimaryTab(routeName);

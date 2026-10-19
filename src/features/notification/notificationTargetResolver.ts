@@ -11,6 +11,7 @@ type TargetRoute =
   | "/(main)/notifications"
   | "/(main)/scanner"
   | "/(main)/sensors"
+  | "/(main)/trees/[treeId]"
   | "/(main)/traceability"
   | "/diagnosis-history"
   | "/diagnosis-result"
@@ -75,6 +76,20 @@ export function resolveNotificationTarget(
       params: { slug },
       pathname: "/(main)/knowledge/[slug]",
       reason: "metadata knowledge slug",
+    };
+  }
+
+  const treeId = readString(metadata, ["treeId"]);
+  if (treeId) {
+    return {
+      label: "Mở chi tiết cây",
+      params: compactParams({
+        treeId,
+        carePlanId: readString(metadata, ["carePlanId", "planId"]),
+        followUpDate: readString(metadata, ["followUpDate"]),
+      }),
+      pathname: "/(main)/trees/[treeId]",
+      reason: "metadata tree follow-up",
     };
   }
 

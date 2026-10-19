@@ -48,7 +48,7 @@ export function NotificationDetailScreen() {
     }
 
     try {
-      const response = await notificationClient.list(session.user.id, {
+      const response = await notificationClient.list({
         page: 0,
         size: 100,
         sortBy: "createdAt",
@@ -81,7 +81,7 @@ export function NotificationDetailScreen() {
     if (!item || !session?.user.id) return;
     setActionLoading("read");
     try {
-      await notificationClient.markRead(session.user.id, item.id);
+      await notificationClient.markRead(item.id);
       setItem({ ...item, isRead: true });
     } catch (cause) {
       setError(
@@ -109,7 +109,7 @@ export function NotificationDetailScreen() {
           void (async () => {
             setActionLoading("delete");
             try {
-              await notificationClient.delete(session.user.id, item.id);
+              await notificationClient.delete(item.id);
               setItem(null);
               setError("Thông báo đã được xóa.");
             } catch (cause) {
@@ -135,7 +135,7 @@ export function NotificationDetailScreen() {
     if (!item) return;
     if (session?.user.id && !item.isRead) {
       try {
-        await notificationClient.markRead(session.user.id, item.id);
+        await notificationClient.markRead(item.id);
         setItem({ ...item, isRead: true });
       } catch {
         // Opening the target should still work when a read receipt fails.

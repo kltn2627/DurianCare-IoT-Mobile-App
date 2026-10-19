@@ -56,57 +56,39 @@ async function requestVoid(config: AxiosRequestConfig) {
 }
 
 export const notificationClient = {
-  count: (userId: string) =>
+  count: () =>
     requestJson<NotificationCountResponse>({
       baseURL: getApiBaseUrl(),
-      headers: {
-        "X-Auth-User-Id": userId,
-      },
       method: "GET",
       url: "/api/v1/notification/notifications/count",
     }),
-  list: (userId: string, query: NotificationQuery = {}) =>
+  list: (query: NotificationQuery = {}) =>
     requestJson<NotificationPageResponse>({
       baseURL: getApiBaseUrl(),
-      headers: {
-        "X-Auth-User-Id": userId,
-      },
       method: "GET",
       url: `/api/v1/notification/notifications?${buildQuery(query)}`,
     }),
-  unread: (userId: string, query: NotificationQuery = {}) =>
+  unread: (query: NotificationQuery = {}) =>
     requestJson<NotificationPageResponse>({
       baseURL: getApiBaseUrl(),
-      headers: {
-        "X-Auth-User-Id": userId,
-      },
       method: "GET",
       url: `/api/v1/notification/notifications/unread?${buildQuery(query)}`,
     }),
-  markRead: (userId: string, id: string) =>
+  markRead: (id: string) =>
     requestVoid({
       baseURL: getApiBaseUrl(),
-      headers: {
-        "X-Auth-User-Id": userId,
-      },
       method: "PATCH",
       url: `/api/v1/notification/notifications/${encodeURIComponent(id)}/read`,
     }),
-  markAllRead: (userId: string) =>
+  markAllRead: () =>
     requestVoid({
       baseURL: getApiBaseUrl(),
-      headers: {
-        "X-Auth-User-Id": userId,
-      },
       method: "PATCH",
       url: "/api/v1/notification/notifications/read-all",
     }),
-  delete: (userId: string, id: string) =>
+  delete: (id: string) =>
     requestVoid({
       baseURL: getApiBaseUrl(),
-      headers: {
-        "X-Auth-User-Id": userId,
-      },
       method: "DELETE",
       url: `/api/v1/notification/notifications/${encodeURIComponent(id)}`,
     }),

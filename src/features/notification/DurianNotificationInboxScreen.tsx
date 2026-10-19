@@ -213,9 +213,9 @@ export function DurianNotificationInboxScreen() {
       try {
         const [pageResult, countResult] = await Promise.all([
           mode === "UNREAD"
-            ? notificationClient.unread(userId, { page, size, sortBy, sortDirection })
-            : notificationClient.list(userId, { page, size, sortBy, sortDirection }),
-          notificationClient.count(userId),
+            ? notificationClient.unread({ page, size, sortBy, sortDirection })
+            : notificationClient.list({ page, size, sortBy, sortDirection }),
+          notificationClient.count(),
         ]);
 
         if (!active) return;
@@ -283,7 +283,7 @@ export function DurianNotificationInboxScreen() {
       if (!userId) return;
       setBusyId(id);
       try {
-        await notificationClient.markRead(userId, id);
+        await notificationClient.markRead(id);
         refresh();
       } catch (cause) {
         setError(
@@ -312,7 +312,7 @@ export function DurianNotificationInboxScreen() {
         onPress: async () => {
           setBusyId("__all__");
           try {
-            await notificationClient.markAllRead(userId);
+            await notificationClient.markAllRead();
             refresh();
           } catch (cause) {
             setError(
@@ -343,7 +343,7 @@ export function DurianNotificationInboxScreen() {
           onPress: async () => {
             setBusyId(id);
             try {
-              await notificationClient.delete(userId, id);
+              await notificationClient.delete(id);
               refresh();
             } catch (cause) {
               setError(
@@ -369,7 +369,7 @@ export function DurianNotificationInboxScreen() {
     (notification: NotificationItem) => {
       if (userId && !notification.isRead) {
         void notificationClient
-          .markRead(userId, notification.id)
+          .markRead(notification.id)
           .then(refresh)
           .catch(() => undefined);
       }
