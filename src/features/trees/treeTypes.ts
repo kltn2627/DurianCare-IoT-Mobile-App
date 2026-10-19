@@ -149,6 +149,11 @@ export interface TreeCarePlan {
   startDate: string;
   followUpDate?: string | null;
   status: CarePlanStatus;
+  source?: string | null;
+  recommendationId?: string | null;
+  recommendationSnapshot?: Record<string, unknown> | null;
+  taskIds?: string[] | null;
+  acceptedAt?: string | null;
   createdByUserId: string;
   createdAt: string;
   updatedAt: string;
@@ -161,6 +166,50 @@ export interface CreateCarePlanRequest {
   treatment?: string | null;
   startDate: string;
   followUpDate?: string | null;
+}
+
+export interface RecommendedCareTask {
+  title?: string | null;
+  description?: string | null;
+  scheduledDate?: string | null;
+  sortOrder?: number | null;
+}
+
+export interface TreeCareRecommendation {
+  id: string;
+  treeId: string;
+  farmId: string;
+  farmZoneId: string;
+  treeCode: string;
+  diagnosisId: string;
+  diseaseCode: string;
+  source: string;
+  status: "DRAFT" | "ACCEPTED";
+  recommendationSnapshot: Record<string, unknown>;
+  tasks: RecommendedCareTask[];
+  followUpDate?: string | null;
+  acceptedCarePlanId?: string | null;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TreeCareTask {
+  id: string;
+  carePlanId: string;
+  diagnosisId: string;
+  treeId: string;
+  treeCode: string;
+  farmId: string;
+  farmZoneId: string;
+  scheduledDate?: string | null;
+  title: string;
+  description?: string | null;
+  status: "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  source?: string | null;
+  sortOrder?: number | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type RecoveryOutcome = "RECOVERED" | "IMPROVED" | "STABLE" | "WORSENED" | "UNCERTAIN";

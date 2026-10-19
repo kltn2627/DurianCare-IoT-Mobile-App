@@ -135,7 +135,7 @@ export function DurianMoreScreen() {
         return;
       }
       try {
-        const response = await notificationClient.count(userId);
+        const response = await notificationClient.count();
         if (active) setUnreadCount(response.count);
       } catch {
         if (active) setUnreadCount(null);

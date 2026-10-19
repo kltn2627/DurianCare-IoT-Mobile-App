@@ -9,6 +9,8 @@ import type {
   PagedResponse,
   RecoveryEvaluationResponse,
   TreeCarePlan,
+  TreeCareRecommendation,
+  TreeCareTask,
   TreeDetail,
   TreeDiagnosis,
   TreeSummary,
@@ -98,6 +100,14 @@ export async function getTree(treeId: string): Promise<TreeDetail> {
   return res.data;
 }
 
+export async function removeTree(treeId: string): Promise<TreeDetail> {
+  const res = await authorizedRequest<TreeDetail>({
+    method: "DELETE",
+    url: `/api/trees/${encodeURIComponent(treeId)}`,
+  });
+  return res.data;
+}
+
 export async function listDiagnoses(
   treeId: string,
   page = 0,
@@ -157,6 +167,52 @@ export async function createCarePlan(
     method: "POST",
     url: `/api/trees/${encodeURIComponent(treeId)}/care-plans`,
     data: body,
+  });
+  return res.data;
+}
+
+export async function createCareRecommendation(
+  treeId: string,
+  body?: { diagnosisId?: string | null },
+): Promise<TreeCareRecommendation> {
+  const res = await authorizedRequest<TreeCareRecommendation>({
+    method: "POST",
+    url: `/api/trees/${encodeURIComponent(treeId)}/care-recommendation`,
+    data: body ?? {},
+  });
+  return res.data;
+}
+
+export async function getLatestCareRecommendation(treeId: string): Promise<TreeCareRecommendation> {
+  const res = await authorizedRequest<TreeCareRecommendation>({
+    method: "GET",
+    url: `/api/trees/${encodeURIComponent(treeId)}/care-recommendation/latest`,
+  });
+  return res.data;
+}
+
+export async function acceptCareRecommendation(
+  treeId: string,
+  recommendationId: string,
+  body?: {
+    treatment?: string | null;
+    startDate?: string | null;
+    followUpDate?: string | null;
+    tasks?: Array<{ title?: string | null; description?: string | null; scheduledDate?: string | null; sortOrder?: number | null }>;
+  },
+): Promise<TreeCarePlan> {
+  const res = await authorizedRequest<TreeCarePlan>({
+    method: "POST",
+    url: `/api/trees/${encodeURIComponent(treeId)}/care-recommendation/${encodeURIComponent(recommendationId)}/accept`,
+    data: body ?? {},
+  });
+  return res.data;
+}
+
+export async function listCarePlanTasks(planId: string): Promise<TreeCareTask[]> {
+  const res = await authorizedRequest<TreeCareTask[]>({
+    method: "GET",
+    url: `/api/care-plans/${encodeURIComponent(planId)}/tasks`,
   });
   return res.data;
 }
