@@ -1,4 +1,14 @@
 import { authorizedRequest } from "@/src/features/auth/authApi";
+import type { ResidueRiskResponse } from "./residueRisk";
+
+export async function getResidueRisk(seasonId: string, plotId?: string) {
+  const query = plotId ? `?plotId=${encodeURIComponent(plotId)}` : "";
+  const response = await authorizedRequest<ResidueRiskResponse>({
+    method: "GET",
+    url: `/api/v1/cultivation-seasons/${encodeURIComponent(seasonId)}/residue-risk${query}`,
+  });
+  return response.data;
+}
 
 import type {
   AgriculturalInput,
@@ -8,6 +18,7 @@ import type {
   ComplianceAssessment,
   CompleteCultivationActivityRequest,
   CompleteCultivationActivityResponse,
+  CreateUserRecordedAgriculturalInputRequest,
   CreateCultivationSeasonRequest,
   CreateExportReleaseRequest,
   CreateFarmRequest,
@@ -293,12 +304,22 @@ export async function getCultivationPlan(id: string) {
 
 export async function listAgriculturalInputs(query?: {
   biologicalLevel?: string;
+  includeUserRecorded?: boolean;
   status?: string;
 }) {
   const queryText = queryString(query);
   const response = await authorizedRequest<AgriculturalInput[]>({
     method: "GET",
     url: `/api/v1/agricultural-inputs${queryText ? `?${queryText}` : ""}`,
+  });
+  return response.data;
+}
+
+export async function createUserRecordedAgriculturalInput(body: CreateUserRecordedAgriculturalInputRequest) {
+  const response = await authorizedRequest<AgriculturalInput>({
+    data: body,
+    method: "POST",
+    url: "/api/v1/agricultural-inputs/user-recorded",
   });
   return response.data;
 }
