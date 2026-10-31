@@ -55,7 +55,16 @@ export type InputCategory =
   | "CHEMICAL_PESTICIDE"
   | "OTHER";
 
-export type InputStatus = "DRAFT" | "VERIFIED" | "INACTIVE" | "PROHIBITED";
+export type InputStatus = "DRAFT" | "VERIFIED" | "USER_RECORDED" | "INACTIVE" | "PROHIBITED";
+
+export type MaterialRecordSource = "OCR" | "MANUAL" | "QR" | "BARCODE";
+
+export type UserRecordedMaterialMetadata = {
+  recordedAt: string;
+  recordedBy: string;
+  source: MaterialRecordSource;
+  ocrConfidence?: number | null;
+};
 
 export type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | "UNKNOWN";
 
@@ -94,6 +103,7 @@ export type FarmZoneStatus = "ACTIVE" | "INACTIVE" | "QUARANTINED" | "ARCHIVED";
 export type FarmStatus = "ACTIVE" | "INACTIVE" | "ARCHIVED";
 
 export type FarmZoneCatalog = {
+  agronomy?: import("./zoneAgronomy").FarmZoneAgronomy | null;
   areaSquareMeters?: number | null;
   boundaryGeoJson?: Record<string, unknown> | null;
   code?: string | null;
@@ -155,6 +165,8 @@ export type UpdateFarmRequest = Partial<CreateFarmRequest> & {
 };
 
 export type CreateFarmZoneRequest = {
+  agronomy?: import("./zoneAgronomy").FarmZoneAgronomy | null;
+  status?: FarmZoneStatus;
   areaSquareMeters?: number | null;
   boundaryGeoJson?: Record<string, unknown> | null;
   code?: string | null;
@@ -242,6 +254,7 @@ export type AgriculturalInput = {
   tradeName?: string | null;
   unit?: string | null;
   updatedAt: string;
+  userRecordedMetadata?: UserRecordedMaterialMetadata | null;
   verifiedAt?: string | null;
   verifiedBy?: string | null;
 };
@@ -342,6 +355,20 @@ export type RejectCultivationActivityRequest = {
   userId: string;
 };
 
+export type ActivityInputUsageRequest = {
+  agriculturalInputId: string;
+  quantityUsed: number;
+  quantityUnit: string;
+  batchNumber?: string;
+  expiryDate?: string;
+  waterVolume?: number;
+  waterVolumeUnit?: string;
+  concentration?: number;
+  concentrationUnit?: string;
+  treatedArea?: number;
+  areaUnit?: string;
+};
+
 export type CompleteCultivationActivityRequest = {
   actualArea?: number;
   actualTreeCount?: number;
@@ -351,7 +378,7 @@ export type CompleteCultivationActivityRequest = {
   equipment?: string | null;
   evidenceFiles: string[];
   executedBy: string;
-  inputUsages: unknown[];
+  inputUsages: ActivityInputUsageRequest[];
   notes?: string | null;
   resultObservation?: string | null;
   startedAt: string;
@@ -366,6 +393,18 @@ export type CompleteCultivationActivityResponse = {
   inputUsages: unknown[];
 };
 
+export type CreateUserRecordedAgriculturalInputRequest = {
+  activeIngredients: ActiveIngredientSnapshot[];
+  category?: InputCategory;
+  manufacturer?: string;
+  ocrConfidence?: number;
+  productName: string;
+  registrationNumber?: string;
+  source: MaterialRecordSource;
+  tradeName?: string;
+  unit?: string;
+};
+
 export type AgriculturalInputSnapshot = {
   activeIngredients: ActiveIngredientSnapshot[];
   allowedMarketCodes: string[];
@@ -377,6 +416,8 @@ export type AgriculturalInputSnapshot = {
   productName: string;
   prohibitedMarketCodes: string[];
   tradeName?: string | null;
+  userRecordedMetadata?: UserRecordedMaterialMetadata | null;
+  verificationStatus?: InputStatus;
 };
 
 export type ActivityExecution = {
@@ -503,6 +544,7 @@ export type LabSample = {
   sampledBy: string;
   samplingLocation?: string | null;
   status: LabSampleStatus;
+  expectedActiveIngredientCodes?: string[];
 };
 
 export type LabResidueResult = {
@@ -510,6 +552,12 @@ export type LabResidueResult = {
   activeIngredientName: string;
   applicableMrl?: number | null;
   applicableMrlSource?: string | null;
+  residueStandardId?: string | null;
+  mrlUnit?: string | null;
+  standardEffectiveFrom?: string | null;
+  standardEffectiveTo?: string | null;
+  standardSourceType?: SourceType | null;
+  evaluationPolicyVersion?: string | null;
   createdAt: string;
   detectionLimit?: number | null;
   id: string;
@@ -542,7 +590,7 @@ export type HarvestBatch = {
 
 export type CreateHarvestBatchRequest = {
   batchCode: string;
-  createdBy: string;
+  createdBy?: string;
   cultivationSeasonId: string;
   expectedDestinationMarket: string;
   farmId: string;
@@ -575,7 +623,7 @@ export type ExportRelease = {
 export type CreateExportReleaseRequest = {
   harvestBatchId: string;
   releaseCode: string;
-  submittedBy: string;
+  submittedBy?: string;
   targetMarketCode: string;
 };
 
@@ -593,5 +641,8 @@ export type TraceabilitySnapshot = {
 
 export type TraceabilityResponse = {
   releaseId: string;
+  status: ExportReleaseStatus;
+  recalledAt?: string | null;
+  recallReason?: string | null;
   snapshot: TraceabilitySnapshot;
 };

@@ -1,147 +1,1880 @@
-import { Archive, CalendarDays, ChevronRight, Pencil, Plus, RefreshCw, ShieldCheck, Trees, X } from "lucide-react-native";
+import {
+  Archive,
+  ArrowLeft,
+  CalendarDays,
+  ChevronRight,
+  Pencil,
+  Plus,
+  RefreshCw,
+  ShieldCheck,
+  Trees,
+  X,
+} from "lucide-react-native";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
+
 import { AuthApiError } from "@/src/features/auth/authApi";
-import { archiveFarmZone, archiveOwnedFarm, createCultivationSeason, createFarmZone, createOwnedFarm, listAuthorizedFarms, listCultivationSeasons, listOwnedFarms, updateCultivationSeason, updateFarmZone, updateOwnedFarm } from "@/src/features/cultivation/api/cultivationApi";
-import type { AuthorizedFarm, CreateCultivationSeasonRequest, CreateFarmRequest, CreateFarmZoneRequest, CultivationSeason, FarmCatalog, FarmStatus, FarmZoneCatalog, FarmZoneStatus, UpdateCultivationSeasonRequest, UpdateFarmRequest, UpdateFarmZoneRequest } from "@/src/features/cultivation/api/cultivationTypes";
+
+import {
+  archiveFarmZone,
+  archiveOwnedFarm,
+  createCultivationSeason,
+  createFarmZone,
+  createOwnedFarm,
+  listAuthorizedFarms,
+  listCultivationSeasons,
+  listOwnedFarms,
+  updateCultivationSeason,
+  updateFarmZone,
+  updateOwnedFarm,
+} from "@/src/features/cultivation/api/cultivationApi";
+
+import type {
+  AuthorizedFarm,
+  CreateCultivationSeasonRequest,
+  CreateFarmRequest,
+  CreateFarmZoneRequest,
+  CultivationSeason,
+  FarmCatalog,
+  FarmStatus,
+  FarmZoneCatalog,
+  FarmZoneStatus,
+  UpdateCultivationSeasonRequest,
+  UpdateFarmRequest,
+  UpdateFarmZoneRequest,
+} from "@/src/features/cultivation/api/cultivationTypes";
+
 import { useSession } from "@/src/session/SessionContext";
+
 import { durianTheme } from "@/src/theme/durianTheme";
 
 type FarmForm = CreateFarmRequest & { status: FarmStatus };
-type ZoneForm = CreateFarmZoneRequest & { status: FarmZoneStatus };
-type SeasonForm = Omit<CreateCultivationSeasonRequest, "createdBy" | "farmId" | "plotId">;
 
-const emptyFarm: FarmForm = { address: "", areaHectares: null, district: "", latitude: null, longitude: null, name: "", province: "", status: "ACTIVE" };
-const emptyZone: ZoneForm = { areaSquareMeters: null, code: "", description: "", name: "", status: "ACTIVE" };
-const defaultSeason: SeasonForm = { crop: "DURIAN", endDate: "", name: "", startDate: new Date().toISOString().slice(0, 10), variety: "" };
+type ZoneForm = CreateFarmZoneRequest & { status: FarmZoneStatus };
+
+type SeasonForm = Omit<
+  CreateCultivationSeasonRequest,
+  "createdBy" | "farmId" | "plotId"
+>;
+
+const emptyFarm: FarmForm = {
+  address: "",
+  areaHectares: null,
+  district: "",
+  latitude: null,
+  longitude: null,
+  name: "",
+  province: "",
+  status: "ACTIVE",
+};
+
+const emptyZone: ZoneForm = {
+  areaSquareMeters: null,
+  code: "",
+  description: "",
+  name: "",
+  status: "ACTIVE",
+};
+
+const defaultSeason: SeasonForm = {
+  crop: "DURIAN",
+  endDate: "",
+  name: "",
+  startDate: new Date().toISOString().slice(0, 10),
+  variety: "",
+};
+
+const zoneStatusLabels: Record<FarmZoneStatus, string> = {
+  ACTIVE: "Đang hoạt động",
+  ARCHIVED: "Đã lưu trữ",
+  INACTIVE: "Tạm ngưng",
+  QUARANTINED: "Cách ly",
+};
 
 function friendlyError(error: unknown, fallback: string) {
-  if (error instanceof AuthApiError && error.status === 403) return "Tài khoản hiện tại không có quyền thao tác dữ liệu này.";
+  if (error instanceof AuthApiError && error.status === 403)
+    return "Tài khoản hiện tại không có quyền thao tác dữ liệu này.";
+
   return error instanceof Error && error.message ? error.message : fallback;
 }
-function dateLabel(value?: string | null) { if (!value) return "Chưa có"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date); }
-function numberValue(value: string) { const parsed = Number(value.replace(",", ".")); return Number.isFinite(parsed) && parsed >= 0 ? parsed : null; }
-function toFarmForm(farm: FarmCatalog): FarmForm { return { address: farm.address ?? "", areaHectares: farm.areaHectares ?? null, district: farm.district ?? "", latitude: farm.latitude ?? null, longitude: farm.longitude ?? null, name: farm.name, province: farm.province ?? "", status: farm.status }; }
-function toZoneForm(zone: FarmZoneCatalog): ZoneForm { return { areaSquareMeters: zone.areaSquareMeters ?? null, code: zone.code ?? "", description: zone.description ?? "", name: zone.name, status: zone.status }; }
-function toSeasonForm(season: CultivationSeason): SeasonForm { return { crop: season.crop ?? "", endDate: season.endDate ?? "", name: season.name, startDate: season.startDate, variety: season.variety ?? "" }; }
+
+function dateLabel(value?: string | null) {
+  if (!value) return "Chưa có";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }).format(date);
+}
+
+function areaHectareLabel(value?: number | null) {
+  if (value == null) return "Chưa cập nhật";
+  const hectares = value / 10_000;
+  return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(hectares)} ha`;
+}
+
+function numberValue(value: string) {
+  const parsed = Number(value.replace(",", "."));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function toFarmForm(farm: FarmCatalog): FarmForm {
+  return {
+    address: farm.address ?? "",
+    areaHectares: farm.areaHectares ?? null,
+    district: farm.district ?? "",
+    latitude: farm.latitude ?? null,
+    longitude: farm.longitude ?? null,
+    name: farm.name,
+    province: farm.province ?? "",
+    status: farm.status,
+  };
+}
+
+function toZoneForm(zone: FarmZoneCatalog): ZoneForm {
+  return {
+    areaSquareMeters: zone.areaSquareMeters ?? null,
+    code: zone.code ?? "",
+    description: zone.description ?? "",
+    name: zone.name,
+    status: zone.status,
+  };
+}
+
+function toSeasonForm(season: CultivationSeason): SeasonForm {
+  return {
+    crop: season.crop ?? "",
+    endDate: season.endDate ?? "",
+    name: season.name,
+    startDate: season.startDate,
+    variety: season.variety ?? "",
+  };
+}
 
 export function DurianFarmCatalogScreen() {
   const { session } = useSession();
+
   const [farms, setFarms] = useState<FarmCatalog[]>([]);
+
   const [authorized, setAuthorized] = useState<AuthorizedFarm[]>([]);
-  const [seasons, setSeasons] = useState<Record<string, CultivationSeason[]>>({});
+
+  const [seasons, setSeasons] = useState<Record<string, CultivationSeason[]>>(
+    {},
+  );
+
   const [selectedFarmId, setSelectedFarmId] = useState<string | null>(null);
-  const [farmEditor, setFarmEditor] = useState<{ farm?: FarmCatalog; draft: FarmForm } | null>(null);
-  const [zoneEditor, setZoneEditor] = useState<{ farmId: string; zone?: FarmZoneCatalog; draft: ZoneForm } | null>(null);
-  const [seasonEditor, setSeasonEditor] = useState<{ farmId: string; zoneId: string; season?: CultivationSeason; draft: SeasonForm } | null>(null);
+
+  const [farmEditor, setFarmEditor] = useState<{
+    farm?: FarmCatalog;
+    draft: FarmForm;
+  } | null>(null);
+
+  const [zoneEditor, setZoneEditor] = useState<{
+    farmId: string;
+    zone?: FarmZoneCatalog;
+    draft: ZoneForm;
+  } | null>(null);
+
+  const [seasonEditor, setSeasonEditor] = useState<{
+    farmId: string;
+    zoneId: string;
+    season?: CultivationSeason;
+    draft: SeasonForm;
+  } | null>(null);
+  const [zoneDetail, setZoneDetail] = useState<{
+    farm: FarmCatalog;
+    zone: FarmZoneCatalog;
+  } | null>(null);
+
   const [loading, setLoading] = useState(true);
+
   const [refreshing, setRefreshing] = useState(false);
+
   const [saving, setSaving] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
+
   const canManage = session?.user.backendRole === "FARMER";
 
-  const load = useCallback(async (refresh = false) => {
-    refresh ? setRefreshing(true) : setLoading(true); setError(null);
-    try {
-      const [ownedResult, authorizedResult] = await Promise.allSettled([listOwnedFarms(), listAuthorizedFarms()]);
-      if (ownedResult.status === "rejected") throw ownedResult.reason;
-      const owned = ownedResult.value;
-      if (__DEV__) {
-        console.info("[CULTIVATION_PARITY]", {
-          endpoint: "GET /api/v1/farms",
-          farmIds: owned.map((farm) => farm.id),
-          platform: "MOBILE",
-          role: session?.user.backendRole ?? null,
-          userId: session?.user.id ?? null,
-          zoneCount: owned.reduce((total, farm) => total + farm.zones.length, 0),
-          zoneIds: owned.flatMap((farm) => farm.zones.map((zone) => zone.id)),
-        });
+  const load = useCallback(
+    async (refresh = false) => {
+      refresh ? setRefreshing(true) : setLoading(true);
+      setError(null);
+
+      try {
+        const [ownedResult, authorizedResult] = await Promise.allSettled([
+          listOwnedFarms(),
+
+          session?.user.backendRole === "FARMER"
+            ? Promise.resolve([])
+            : listAuthorizedFarms(),
+        ]);
+
+        if (ownedResult.status === "rejected") throw ownedResult.reason;
+
+        const owned = ownedResult.value;
+
+        if (__DEV__) {
+          console.info("[CULTIVATION_PARITY]", {
+            endpoint: "GET /api/v1/farms",
+
+            farmIds: owned.map((farm) => farm.id),
+
+            platform: "MOBILE",
+
+            role: session?.user.backendRole ?? null,
+
+            userId: session?.user.id ?? null,
+
+            zoneCount: owned.reduce(
+              (total, farm) => total + farm.zones.length,
+              0,
+            ),
+
+            zoneIds: owned.flatMap((farm) => farm.zones.map((zone) => zone.id)),
+          });
+        }
+
+        setFarms(owned);
+        setAuthorized(
+          authorizedResult.status === "fulfilled" ? authorizedResult.value : [],
+        );
+
+        setSelectedFarmId((current) =>
+          current && owned.some((farm) => farm.id === current)
+            ? current
+            : (owned[0]?.id ?? null),
+        );
+
+        const results = await Promise.allSettled(
+          owned.map((farm) => listCultivationSeasons({ farmId: farm.id })),
+        );
+
+        setSeasons(
+          Object.fromEntries(
+            owned.map((farm, index) => [
+              farm.id,
+              results[index]?.status === "fulfilled"
+                ? results[index].value
+                : [],
+            ]),
+          ),
+        );
+      } catch (caught) {
+        setError(
+          friendlyError(caught, "Không thể tải catalog farm/khu/mùa vụ."),
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
-      setFarms(owned); setAuthorized(authorizedResult.status === "fulfilled" ? authorizedResult.value : []);
-      setSelectedFarmId((current) => current && owned.some((farm) => farm.id === current) ? current : owned[0]?.id ?? null);
-      const results = await Promise.allSettled(owned.map((farm) => listCultivationSeasons({ farmId: farm.id })));
-      setSeasons(Object.fromEntries(owned.map((farm, index) => [farm.id, results[index]?.status === "fulfilled" ? results[index].value : []])));
-    } catch (caught) { setError(friendlyError(caught, "Không thể tải catalog farm/khu/mùa vụ.")); }
-    finally { setLoading(false); setRefreshing(false); }
-  }, [session?.user.backendRole, session?.user.id]);
-  useEffect(() => { void load(); }, [load]);
-  const selectedFarm = useMemo(() => farms.find((farm) => farm.id === selectedFarmId) ?? null, [farms, selectedFarmId]);
+    },
+    [session?.user.backendRole, session?.user.id],
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const selectedFarm = useMemo(
+    () => farms.find((farm) => farm.id === selectedFarmId) ?? null,
+    [farms, selectedFarmId],
+  );
 
   async function saveFarm() {
     if (!farmEditor) return;
-    if (!farmEditor.draft.name.trim()) { Alert.alert("Thiếu tên farm", "Vui lòng nhập tên trang trại."); return; }
+
+    if (!farmEditor.draft.name.trim()) {
+      Alert.alert("Thiếu tên farm", "Vui lòng nhập tên trang trại.");
+      return;
+    }
+
     setSaving(true);
+
     try {
       const { status, ...body } = farmEditor.draft;
-      if (farmEditor.farm) await updateOwnedFarm(farmEditor.farm.id, { ...body, status } satisfies UpdateFarmRequest);
+
+      if (farmEditor.farm)
+        await updateOwnedFarm(farmEditor.farm.id, {
+          ...body,
+          status,
+        } satisfies UpdateFarmRequest);
       else await createOwnedFarm(body);
-      setFarmEditor(null); await load(true);
-    } catch (caught) { Alert.alert("Không thể lưu farm", friendlyError(caught, "Vui lòng thử lại.")); }
-    finally { setSaving(false); }
+
+      setFarmEditor(null);
+      await load(true);
+    } catch (caught) {
+      Alert.alert(
+        "Không thể lưu farm",
+        friendlyError(caught, "Vui lòng thử lại."),
+      );
+    } finally {
+      setSaving(false);
+    }
   }
+
   async function saveZone() {
     if (!zoneEditor) return;
-    if (!zoneEditor.draft.name.trim()) { Alert.alert("Thiếu tên khu", "Vui lòng nhập tên khu canh tác."); return; }
+
+    if (!zoneEditor.draft.name.trim()) {
+      Alert.alert("Thiếu tên khu", "Vui lòng nhập tên khu canh tác.");
+      return;
+    }
+
     setSaving(true);
+
     try {
       const { status, ...body } = zoneEditor.draft;
-      if (zoneEditor.zone) await updateFarmZone(zoneEditor.farmId, zoneEditor.zone.id, { ...body, status } satisfies UpdateFarmZoneRequest);
+
+      if (zoneEditor.zone)
+        await updateFarmZone(zoneEditor.farmId, zoneEditor.zone.id, {
+          ...body,
+          status,
+        } satisfies UpdateFarmZoneRequest);
       else await createFarmZone(zoneEditor.farmId, body);
-      setZoneEditor(null); await load(true);
-    } catch (caught) { Alert.alert("Không thể lưu khu", friendlyError(caught, "Vui lòng thử lại.")); }
-    finally { setSaving(false); }
+
+      setZoneEditor(null);
+      await load(true);
+    } catch (caught) {
+      Alert.alert(
+        "Không thể lưu khu",
+        friendlyError(caught, "Vui lòng thử lại."),
+      );
+    } finally {
+      setSaving(false);
+    }
   }
+
   async function saveSeason() {
     if (!seasonEditor || !session?.user.id) return;
-    if (!seasonEditor.draft.name.trim() || !seasonEditor.draft.startDate.trim()) { Alert.alert("Thiếu mùa vụ", "Cần tên mùa vụ và ngày bắt đầu."); return; }
+
+    if (
+      !seasonEditor.draft.name.trim() ||
+      !seasonEditor.draft.startDate.trim()
+    ) {
+      Alert.alert("Thiếu mùa vụ", "Cần tên mùa vụ và ngày bắt đầu.");
+      return;
+    }
+
     setSaving(true);
+
     try {
       if (seasonEditor.season) {
-        await updateCultivationSeason(seasonEditor.season.id, { crop: seasonEditor.draft.crop?.trim() || null, endDate: seasonEditor.draft.endDate?.trim() || null, name: seasonEditor.draft.name.trim(), startDate: seasonEditor.draft.startDate.trim(), variety: seasonEditor.draft.variety?.trim() || null } satisfies UpdateCultivationSeasonRequest);
+        await updateCultivationSeason(seasonEditor.season.id, {
+          crop: seasonEditor.draft.crop?.trim() || null,
+          endDate: seasonEditor.draft.endDate?.trim() || null,
+          name: seasonEditor.draft.name.trim(),
+          startDate: seasonEditor.draft.startDate.trim(),
+          variety: seasonEditor.draft.variety?.trim() || null,
+        } satisfies UpdateCultivationSeasonRequest);
       } else {
-        await createCultivationSeason({ ...seasonEditor.draft, createdBy: session.user.id, crop: seasonEditor.draft.crop?.trim() || null, endDate: seasonEditor.draft.endDate?.trim() || null, farmId: seasonEditor.farmId, name: seasonEditor.draft.name.trim(), plotId: seasonEditor.zoneId, variety: seasonEditor.draft.variety?.trim() || null });
+        await createCultivationSeason({
+          ...seasonEditor.draft,
+          createdBy: session.user.id,
+          crop: seasonEditor.draft.crop?.trim() || null,
+          endDate: seasonEditor.draft.endDate?.trim() || null,
+          farmId: seasonEditor.farmId,
+          name: seasonEditor.draft.name.trim(),
+          plotId: seasonEditor.zoneId,
+          variety: seasonEditor.draft.variety?.trim() || null,
+        });
       }
-      setSeasonEditor(null); await load(true);
-    } catch (caught) { Alert.alert("Không thể lưu mùa vụ", friendlyError(caught, "Vui lòng thử lại.")); }
-    finally { setSaving(false); }
-  }
-  function archiveFarm(farm: FarmCatalog) { Alert.alert("Lưu trữ farm", `Lưu trữ “${farm.name}”?`, [{ text: "Hủy", style: "cancel" }, { text: "Lưu trữ", style: "destructive", onPress: () => void (async () => { try { await archiveOwnedFarm(farm.id); await load(true); } catch (caught) { Alert.alert("Không thể lưu trữ", friendlyError(caught, "Vui lòng thử lại.")); } })() }]); }
-  function archiveZone(farm: FarmCatalog, zone: FarmZoneCatalog) { Alert.alert("Lưu trữ khu", `Lưu trữ “${zone.name}” khỏi ${farm.name}?`, [{ text: "Hủy", style: "cancel" }, { text: "Lưu trữ", style: "destructive", onPress: () => void (async () => { try { await archiveFarmZone(farm.id, zone.id); await load(true); } catch (caught) { Alert.alert("Không thể lưu trữ", friendlyError(caught, "Vui lòng thử lại.")); } })() }]); }
 
-  return <SafeAreaView edges={["top"]} style={styles.safeArea}>
-    <DurianScreenHeader eyebrow="KHU CANH TÁC" icon={Trees} title="Farm, khu và mùa vụ" subtitle="Catalog thật từ backend; chọn farm để xem các khu và mùa vụ liên quan." />
-    <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl colors={[durianTheme.colors.moss]} refreshing={refreshing} onRefresh={() => void load(true)} />}>
-      <View style={styles.toolbar}><Text style={styles.toolbarText}>{canManage ? "Bạn có thể quản lý farm sở hữu." : "Farm được ủy quyền chỉ có thể xem theo quyền backend."}</Text><Pressable accessibilityLabel="Làm mới farm" onPress={() => void load(true)} style={styles.iconButton}><RefreshCw color={durianTheme.colors.moss} size={18} /></Pressable></View>
-      {error ? <ErrorCard message={error} onRetry={() => void load()} /> : null}{loading ? <LoadingCard /> : null}
-      {!loading && canManage ? <Pressable onPress={() => setFarmEditor({ draft: emptyFarm })} style={styles.primaryButton}><Plus color={durianTheme.colors.white} size={18} /><Text style={styles.primaryButtonText}>Tạo farm</Text></Pressable> : null}
-      {!loading && !farms.length ? <EmptyCard title="Chưa có farm sở hữu" body="Tạo farm đầu tiên để thêm khu canh tác và mùa vụ thật từ backend." /> : null}
-      {!loading && farms.length ? <><Text style={styles.sectionTitle}>Farm sở hữu</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.farmRail}>{farms.map((farm) => <Pressable key={farm.id} onPress={() => setSelectedFarmId(farm.id)} style={[styles.farmChip, selectedFarm?.id === farm.id && styles.farmChipActive]}><Text numberOfLines={1} style={[styles.farmChipText, selectedFarm?.id === farm.id && styles.farmChipTextActive]}>{farm.name}</Text></Pressable>)}</ScrollView></> : null}
-      {selectedFarm ? <FarmDetail canManage={canManage} farm={selectedFarm} seasons={seasons[selectedFarm.id] ?? []} onArchiveFarm={() => archiveFarm(selectedFarm)} onArchiveZone={(zone) => archiveZone(selectedFarm, zone)} onCreateSeason={(zone) => setSeasonEditor({ farmId: selectedFarm.id, zoneId: zone.id, draft: defaultSeason })} onCreateZone={() => setZoneEditor({ farmId: selectedFarm.id, draft: emptyZone })} onEditFarm={() => setFarmEditor({ farm: selectedFarm, draft: toFarmForm(selectedFarm) })} onEditSeason={(season) => setSeasonEditor({ farmId: selectedFarm.id, zoneId: season.plotId, season, draft: toSeasonForm(season) })} onEditZone={(zone) => setZoneEditor({ farmId: selectedFarm.id, zone, draft: toZoneForm(zone) })} /> : null}
-      {!loading && authorized.length ? <View style={styles.readOnlyPanel}><View style={styles.readOnlyHeading}><ShieldCheck color={durianTheme.colors.moss} size={19} /><Text style={styles.sectionTitle}>Farm được ủy quyền</Text></View>{authorized.map((farm) => <View key={farm.authorizationId} style={styles.authorizedRow}><Text style={styles.authorizedTitle}>{farm.farmName || `Farm ${farm.farmId.slice(0, 8)}`}</Text><Text style={styles.authorizedMeta}>{farm.allowedCultivationAreaIds.length} khu · {farm.permissions.join(", ") || "Quyền xem"}</Text></View>)}</View> : null}
-    </ScrollView>
-    <FarmEditor editor={farmEditor} saving={saving} onChange={setFarmEditor} onClose={() => setFarmEditor(null)} onSubmit={() => void saveFarm()} />
-    <ZoneEditor editor={zoneEditor} saving={saving} onChange={setZoneEditor} onClose={() => setZoneEditor(null)} onSubmit={() => void saveZone()} />
-    <SeasonEditor editor={seasonEditor} saving={saving} onChange={setSeasonEditor} onClose={() => setSeasonEditor(null)} onSubmit={() => void saveSeason()} />
-  </SafeAreaView>;
+      setSeasonEditor(null);
+      await load(true);
+    } catch (caught) {
+      Alert.alert(
+        "Không thể lưu mùa vụ",
+        friendlyError(caught, "Vui lòng thử lại."),
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function archiveFarm(farm: FarmCatalog) {
+    Alert.alert("Lưu trữ farm", `Lưu trữ “${farm.name}”?`, [
+      { text: "Hủy", style: "cancel" },
+      {
+        text: "Lưu trữ",
+        style: "destructive",
+        onPress: () =>
+          void (async () => {
+            try {
+              await archiveOwnedFarm(farm.id);
+              await load(true);
+            } catch (caught) {
+              Alert.alert(
+                "Không thể lưu trữ",
+                friendlyError(caught, "Vui lòng thử lại."),
+              );
+            }
+          })(),
+      },
+    ]);
+  }
+
+  function archiveZone(farm: FarmCatalog, zone: FarmZoneCatalog) {
+    Alert.alert("Lưu trữ khu", `Lưu trữ “${zone.name}” khỏi ${farm.name}?`, [
+      { text: "Hủy", style: "cancel" },
+      {
+        text: "Lưu trữ",
+        style: "destructive",
+        onPress: () =>
+          void (async () => {
+            try {
+              await archiveFarmZone(farm.id, zone.id);
+              setZoneDetail(null);
+              await load(true);
+            } catch (caught) {
+              Alert.alert(
+                "Không thể lưu trữ",
+                friendlyError(caught, "Vui lòng thử lại."),
+              );
+            }
+          })(),
+      },
+    ]);
+  }
+
+  return (
+    <SafeAreaView edges={["top"]} style={styles.safeArea}>
+      <DurianScreenHeader
+        eyebrow="KHU CANH TÁC"
+        icon={Trees}
+        title="Khu vườn của bạn"
+        subtitle="Chọn trang trại để xem các khu canh tác và mùa vụ."
+      />
+
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            colors={[durianTheme.colors.moss]}
+            refreshing={refreshing}
+            onRefresh={() => void load(true)}
+          />
+        }
+      >
+        <View style={styles.toolbar}>
+          <Text style={styles.toolbarText}>
+            {canManage
+              ? "Bạn có thể quản lý farm sở hữu."
+              : "Farm được ủy quyền chỉ có thể xem theo quyền backend."}
+          </Text>
+          <Pressable
+            accessibilityLabel="Làm mới farm"
+            onPress={() => void load(true)}
+            style={styles.iconButton}
+          >
+            <RefreshCw color={durianTheme.colors.moss} size={18} />
+          </Pressable>
+        </View>
+
+        {error ? (
+          <ErrorCard message={error} onRetry={() => void load()} />
+        ) : null}
+        {loading ? <LoadingCard /> : null}
+
+        {!loading && canManage ? (
+          <Pressable
+            onPress={() => setFarmEditor({ draft: emptyFarm })}
+            style={styles.primaryButton}
+          >
+            <Plus color={durianTheme.colors.white} size={18} />
+            <Text style={styles.primaryButtonText}>Tạo farm</Text>
+          </Pressable>
+        ) : null}
+
+        {!loading && !farms.length ? (
+          <EmptyCard
+            title="Chưa có farm sở hữu"
+            body="Tạo farm đầu tiên để thêm khu canh tác và mùa vụ thật từ backend."
+          />
+        ) : null}
+
+        {!loading && farms.length ? (
+          <>
+            <Text style={styles.sectionTitle}>Farm sở hữu</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.farmRail}
+            >
+              {farms.map((farm) => (
+                <Pressable
+                  key={farm.id}
+                  onPress={() => setSelectedFarmId(farm.id)}
+                  style={[
+                    styles.farmChip,
+                    selectedFarm?.id === farm.id && styles.farmChipActive,
+                  ]}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.farmChipText,
+                      selectedFarm?.id === farm.id && styles.farmChipTextActive,
+                    ]}
+                  >
+                    {farm.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </>
+        ) : null}
+
+        {selectedFarm ? (
+          <FarmDetail
+            canManage={canManage}
+            farm={selectedFarm}
+            seasons={seasons[selectedFarm.id] ?? []}
+            onArchiveFarm={() => archiveFarm(selectedFarm)}
+            onArchiveZone={(zone) => archiveZone(selectedFarm, zone)}
+            onCreateSeason={(zone) =>
+              setSeasonEditor({
+                farmId: selectedFarm.id,
+                zoneId: zone.id,
+                draft: defaultSeason,
+              })
+            }
+            onCreateZone={() =>
+              setZoneEditor({
+                farmId: selectedFarm.id,
+                draft: emptyZone,
+              })
+            }
+            onEditFarm={() =>
+              setFarmEditor({
+                farm: selectedFarm,
+                draft: toFarmForm(selectedFarm),
+              })
+            }
+            onEditSeason={(season) =>
+              setSeasonEditor({
+                farmId: selectedFarm.id,
+                zoneId: season.plotId,
+                season,
+                draft: toSeasonForm(season),
+              })
+            }
+            onEditZone={(zone) =>
+              setZoneEditor({
+                farmId: selectedFarm.id,
+                zone,
+                draft: toZoneForm(zone),
+              })
+            }
+            onViewZone={(zone) =>
+              setZoneDetail({
+                farm: selectedFarm,
+                zone,
+              })
+            }
+          />
+        ) : null}
+
+        {!loading && authorized.length ? (
+          <View style={styles.readOnlyPanel}>
+            <View style={styles.readOnlyHeading}>
+              <ShieldCheck color={durianTheme.colors.moss} size={19} />
+              <Text style={styles.sectionTitle}>Farm được ủy quyền</Text>
+            </View>
+            {authorized.map((farm) => (
+              <View key={farm.authorizationId} style={styles.authorizedRow}>
+                <Text style={styles.authorizedTitle}>
+                  {farm.farmName || `Farm ${farm.farmId.slice(0, 8)}`}
+                </Text>
+                <Text style={styles.authorizedMeta}>
+                  {farm.allowedCultivationAreaIds.length} khu ·{" "}
+                  {farm.permissions.join(", ") || "Quyền xem"}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+      </ScrollView>
+
+      <FarmEditor
+        editor={farmEditor}
+        saving={saving}
+        onChange={setFarmEditor}
+        onClose={() => setFarmEditor(null)}
+        onSubmit={() => void saveFarm()}
+      />
+
+      <ZoneEditor
+        editor={zoneEditor}
+        saving={saving}
+        onChange={setZoneEditor}
+        onClose={() => setZoneEditor(null)}
+        onSubmit={() => void saveZone()}
+      />
+
+      <SeasonEditor
+        editor={seasonEditor}
+        saving={saving}
+        onChange={setSeasonEditor}
+        onClose={() => setSeasonEditor(null)}
+        onSubmit={() => void saveSeason()}
+      />
+
+      <ZoneDetailModal
+        canManage={canManage}
+        detail={zoneDetail}
+        onArchive={() =>
+          zoneDetail && archiveZone(zoneDetail.farm, zoneDetail.zone)
+        }
+        onClose={() => setZoneDetail(null)}
+        onCreateSeason={() => {
+          if (!zoneDetail) return;
+          setZoneDetail(null);
+          setSeasonEditor({
+            farmId: zoneDetail.farm.id,
+            zoneId: zoneDetail.zone.id,
+            draft: defaultSeason,
+          });
+        }}
+        onEdit={() => {
+          if (!zoneDetail) return;
+          setZoneDetail(null);
+          setZoneEditor({
+            farmId: zoneDetail.farm.id,
+            zone: zoneDetail.zone,
+            draft: toZoneForm(zoneDetail.zone),
+          });
+        }}
+        seasons={zoneDetail ? (seasons[zoneDetail.farm.id] ?? []) : []}
+      />
+    </SafeAreaView>
+  );
 }
 
-function FarmDetail({ canManage, farm, seasons, onArchiveFarm, onArchiveZone, onCreateSeason, onCreateZone, onEditFarm, onEditSeason, onEditZone }: { canManage: boolean; farm: FarmCatalog; seasons: CultivationSeason[]; onArchiveFarm: () => void; onArchiveZone: (zone: FarmZoneCatalog) => void; onCreateSeason: (zone: FarmZoneCatalog) => void; onCreateZone: () => void; onEditFarm: () => void; onEditSeason: (season: CultivationSeason) => void; onEditZone: (zone: FarmZoneCatalog) => void }) { const activeZones = farm.zones.filter((zone) => zone.status !== "ARCHIVED"); return <View style={styles.detailPanel}><View style={styles.detailHeader}><View style={styles.detailCopy}><Text style={styles.detailTitle}>{farm.name}</Text><Text style={styles.detailMeta}>{farm.status} · {farm.province || farm.district || farm.address || "Chưa có địa chỉ"}</Text></View>{canManage ? <View style={styles.inlineActions}><SmallAction icon={Pencil} label="Sửa" onPress={onEditFarm} /><SmallAction icon={Archive} label="Lưu" danger onPress={onArchiveFarm} /></View> : null}</View><View style={styles.infoGrid}><InfoRow label="Diện tích" value={farm.areaHectares == null ? "Chưa có" : `${farm.areaHectares} ha`} /><InfoRow label="Địa chỉ" value={[farm.address, farm.district, farm.province].filter(Boolean).join(", ") || "Chưa có"} /><InfoRow label="Tọa độ" value={farm.latitude == null || farm.longitude == null ? "Chưa có" : `${farm.latitude}, ${farm.longitude}`} /><InfoRow label="Cập nhật" value={dateLabel(farm.updatedAt)} /></View><View style={styles.sectionHeader}><View><Text style={styles.subsectionTitle}>Khu canh tác</Text><Text style={styles.subsectionCopy}>Các khu thuộc farm này, có thể mở để tạo mùa vụ.</Text></View>{canManage ? <SmallAction icon={Plus} label="Thêm khu" onPress={onCreateZone} /> : null}</View>{activeZones.length ? activeZones.map((zone) => <View key={zone.id} style={styles.zoneCard}><View style={styles.zoneTop}><View style={styles.zoneCopy}><Text style={styles.zoneTitle}>{zone.name}</Text><Text style={styles.zoneMeta}>{zone.code || "Chưa có mã"} · {zone.status}</Text></View><ChevronRight color={durianTheme.colors.muted} size={18} /></View><Text style={styles.zoneDescription}>{zone.description || "Chưa có mô tả khu canh tác."}</Text><Text style={styles.zoneArea}>{zone.areaSquareMeters == null ? "Diện tích chưa có" : `${zone.areaSquareMeters} m²`}</Text>{canManage ? <View style={styles.inlineActions}><SmallAction icon={CalendarDays} label="Tạo mùa" onPress={() => onCreateSeason(zone)} /><SmallAction icon={Pencil} label="Sửa" onPress={() => onEditZone(zone)} /><SmallAction icon={Archive} label="Lưu" danger onPress={() => onArchiveZone(zone)} /></View> : null}</View>) : <EmptyCard title="Chưa có khu canh tác" body="Thêm khu để liên kết mùa vụ, kế hoạch và công việc chăm sóc." />}<Text style={styles.subsectionTitle}>Mùa vụ</Text>{seasons.length ? seasons.map((season) => <View key={season.id} style={styles.seasonRow}><CalendarDays color={durianTheme.colors.moss} size={18} /><View style={styles.seasonCopy}><Text style={styles.seasonTitle}>{season.name}</Text><Text style={styles.seasonMeta}>{season.crop || "Cây trồng chưa có"} · {season.variety || "Giống chưa có"}</Text><Text style={styles.seasonMeta}>{dateLabel(season.startDate)} → {dateLabel(season.endDate)}</Text></View>{canManage ? <SmallAction icon={Pencil} label="Sửa" onPress={() => onEditSeason(season)} /> : null}</View>) : <EmptyCard title="Chưa có mùa vụ" body="Tạo mùa vụ từ một khu canh tác." />}</View>; }
-function FarmEditor({ editor, saving, onChange, onClose, onSubmit }: { editor: { farm?: FarmCatalog; draft: FarmForm } | null; saving: boolean; onChange: (value: { farm?: FarmCatalog; draft: FarmForm } | null) => void; onClose: () => void; onSubmit: () => void }) { if (!editor) return null; const update = (next: Partial<FarmForm>) => onChange({ ...editor, draft: { ...editor.draft, ...next } }); return <EditorModal title={editor.farm ? "Sửa farm" : "Tạo farm"} saving={saving} onClose={onClose} onSubmit={onSubmit}><Field label="Tên farm *" value={editor.draft.name} onChangeText={(name) => update({ name })} /><Field label="Địa chỉ" value={editor.draft.address ?? ""} onChangeText={(address) => update({ address })} /><Field label="Tỉnh / thành" value={editor.draft.province ?? ""} onChangeText={(province) => update({ province })} /><Field label="Quận / huyện" value={editor.draft.district ?? ""} onChangeText={(district) => update({ district })} /><NumberField label="Diện tích (ha)" value={editor.draft.areaHectares} onChange={(areaHectares) => update({ areaHectares })} /><NumberField label="Vĩ độ" value={editor.draft.latitude} onChange={(latitude) => update({ latitude })} /><NumberField label="Kinh độ" value={editor.draft.longitude} onChange={(longitude) => update({ longitude })} />{editor.farm ? <ChoiceRow label="Trạng thái" options={["ACTIVE", "INACTIVE", "ARCHIVED"] as FarmStatus[]} value={editor.draft.status} onChange={(status) => update({ status })} /> : null}</EditorModal>; }
-function ZoneEditor({ editor, saving, onChange, onClose, onSubmit }: { editor: { farmId: string; zone?: FarmZoneCatalog; draft: ZoneForm } | null; saving: boolean; onChange: (value: { farmId: string; zone?: FarmZoneCatalog; draft: ZoneForm } | null) => void; onClose: () => void; onSubmit: () => void }) { if (!editor) return null; const update = (next: Partial<ZoneForm>) => onChange({ ...editor, draft: { ...editor.draft, ...next } }); return <EditorModal title={editor.zone ? "Sửa khu canh tác" : "Tạo khu canh tác"} saving={saving} onClose={onClose} onSubmit={onSubmit}><Field label="Tên khu *" value={editor.draft.name} onChangeText={(name) => update({ name })} /><Field label="Mã khu" value={editor.draft.code ?? ""} onChangeText={(code) => update({ code })} /><NumberField label="Diện tích (m²)" value={editor.draft.areaSquareMeters} onChange={(areaSquareMeters) => update({ areaSquareMeters })} /><Field label="Mô tả" multiline value={editor.draft.description ?? ""} onChangeText={(description) => update({ description })} />{editor.zone ? <ChoiceRow label="Trạng thái" options={["ACTIVE", "INACTIVE", "QUARANTINED", "ARCHIVED"] as FarmZoneStatus[]} value={editor.draft.status} onChange={(status) => update({ status })} /> : null}</EditorModal>; }
-function SeasonEditor({ editor, saving, onChange, onClose, onSubmit }: { editor: { farmId: string; zoneId: string; season?: CultivationSeason; draft: SeasonForm } | null; saving: boolean; onChange: (value: { farmId: string; zoneId: string; season?: CultivationSeason; draft: SeasonForm } | null) => void; onClose: () => void; onSubmit: () => void }) { if (!editor) return null; const update = (next: Partial<SeasonForm>) => onChange({ ...editor, draft: { ...editor.draft, ...next } }); return <EditorModal title={editor.season ? "Sửa mùa vụ" : "Tạo mùa vụ"} saving={saving} onClose={onClose} onSubmit={onSubmit}><Field label="Tên mùa vụ *" value={editor.draft.name} onChangeText={(name) => update({ name })} /><Field label="Ngày bắt đầu (YYYY-MM-DD) *" value={editor.draft.startDate} onChangeText={(startDate) => update({ startDate })} /><Field label="Ngày kết thúc (YYYY-MM-DD)" value={editor.draft.endDate ?? ""} onChangeText={(endDate) => update({ endDate })} /><Field label="Cây trồng" value={editor.draft.crop ?? ""} onChangeText={(crop) => update({ crop })} /><Field label="Giống" value={editor.draft.variety ?? ""} onChangeText={(variety) => update({ variety })} /></EditorModal>; }
-function EditorModal({ children, onClose, onSubmit, saving, title }: { children: React.ReactNode; onClose: () => void; onSubmit: () => void; saving: boolean; title: string }) { return <Modal animationType="slide" onRequestClose={onClose} visible><SafeAreaView style={styles.modalSafeArea}><View style={styles.modalHeader}><Pressable onPress={onClose} style={styles.iconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable><Text style={styles.modalTitle}>{title}</Text><View style={styles.iconButton} /></View><ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">{children}<Pressable disabled={saving} onPress={onSubmit} style={[styles.primaryButton, saving && styles.disabled]}>{saving ? <ActivityIndicator color={durianTheme.colors.white} /> : <Plus color={durianTheme.colors.white} size={18} />}<Text style={styles.primaryButtonText}>{saving ? "Đang lưu..." : "Lưu vào backend"}</Text></Pressable></ScrollView></SafeAreaView></Modal>; }
-function Field({ label, multiline, onChangeText, value }: { label: string; multiline?: boolean; onChangeText: (value: string) => void; value: string }) { return <View style={styles.field}><Text style={styles.fieldLabel}>{label}</Text><TextInput multiline={multiline} onChangeText={onChangeText} style={[styles.input, multiline && styles.textarea]} value={value} /></View>; }
-function NumberField({ label, onChange, value }: { label: string; onChange: (value: number | null) => void; value?: number | null }) { return <View style={styles.field}><Text style={styles.fieldLabel}>{label}</Text><TextInput keyboardType="decimal-pad" onChangeText={(next) => onChange(next.trim() ? numberValue(next) : null)} style={styles.input} value={value == null ? "" : String(value)} /></View>; }
-function ChoiceRow<T extends string>({ label, onChange, options, value }: { label: string; onChange: (value: T) => void; options: T[]; value: T }) { return <View style={styles.field}><Text style={styles.fieldLabel}>{label}</Text><View style={styles.choiceRow}>{options.map((option) => <Pressable key={option} onPress={() => onChange(option)} style={[styles.choice, option === value && styles.choiceActive]}><Text style={[styles.choiceText, option === value && styles.choiceTextActive]}>{option}</Text></Pressable>)}</View></View>; }
-function SmallAction({ danger, icon: Icon, label, onPress }: { danger?: boolean; icon: typeof Plus; label: string; onPress: () => void }) { return <Pressable onPress={onPress} style={[styles.smallAction, danger && styles.smallActionDanger]}><Icon color={danger ? durianTheme.colors.danger : durianTheme.colors.moss} size={14} /><Text style={[styles.smallActionText, danger && styles.smallActionDangerText]}>{label}</Text></Pressable>; }
-function InfoRow({ label, value }: { label: string; value: string }) { return <View style={styles.infoRow}><Text style={styles.infoLabel}>{label}</Text><Text style={styles.infoValue}>{value}</Text></View>; }
-function LoadingCard() { return <View style={styles.loadingCard}><ActivityIndicator color={durianTheme.colors.moss} /><Text style={styles.loadingText}>Đang tải catalog thật từ backend...</Text></View>; }
-function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) { return <View style={styles.errorCard}><Text style={styles.errorText}>{message}</Text><Pressable onPress={onRetry} style={styles.retryButton}><Text style={styles.retryText}>Thử lại</Text></Pressable></View>; }
-function EmptyCard({ body, title }: { body: string; title: string }) { return <View style={styles.emptyCard}><Text style={styles.emptyTitle}>{title}</Text><Text style={styles.emptyText}>{body}</Text></View>; }
+function FarmDetail({
+  canManage,
+  farm,
+  seasons,
+  onArchiveFarm,
+  onArchiveZone,
+  onCreateSeason,
+  onCreateZone,
+  onEditFarm,
+  onEditSeason,
+  onEditZone,
+  onViewZone,
+}: {
+  canManage: boolean;
+  farm: FarmCatalog;
+  seasons: CultivationSeason[];
+  onArchiveFarm: () => void;
+  onArchiveZone: (zone: FarmZoneCatalog) => void;
+  onCreateSeason: (zone: FarmZoneCatalog) => void;
+  onCreateZone: () => void;
+  onEditFarm: () => void;
+  onEditSeason: (season: CultivationSeason) => void;
+  onEditZone: (zone: FarmZoneCatalog) => void;
+  onViewZone: (zone: FarmZoneCatalog) => void;
+}) {
+  const activeZones = farm.zones.filter((zone) => zone.status !== "ARCHIVED");
+  const address =
+    [farm.address, farm.district, farm.province].filter(Boolean).join(", ") ||
+    "Chưa có địa chỉ";
+
+  return (
+    <View style={styles.detailPanel}>
+      <View style={styles.detailHeader}>
+        <View style={styles.detailCopy}>
+          <Text style={styles.detailTitle}>{farm.name}</Text>
+          <Text style={styles.detailMeta}>
+            {farm.status} ·{" "}
+            {farm.province || farm.district || "Chưa có địa chỉ"}
+          </Text>
+        </View>
+        {canManage ? (
+          <View style={styles.inlineActions}>
+            <SmallAction icon={Pencil} label="Sửa" onPress={onEditFarm} />
+            <SmallAction
+              icon={Archive}
+              label="Lưu"
+              danger
+              onPress={onArchiveFarm}
+            />
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.farmSummary}>
+        <Text style={styles.farmSummaryText}>
+          Diện tích:{" "}
+          {farm.areaHectares == null ? "Chưa có" : `${farm.areaHectares} ha`}
+        </Text>
+        <Text numberOfLines={1} style={styles.farmSummaryText}>
+          {address}
+        </Text>
+      </View>
+
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionHeadingRow}>
+          <Text style={styles.sectionHeadingTitle}>
+            Khu canh tác ({activeZones.length})
+          </Text>
+          {canManage ? (
+            <SmallAction icon={Plus} label="Thêm khu" onPress={onCreateZone} />
+          ) : null}
+        </View>
+        <Text style={styles.subsectionCopy}>
+          Chạm vào một khu để xem chi tiết và mùa vụ liên quan.
+        </Text>
+      </View>
+
+      {activeZones.length ? (
+        activeZones.map((zone) => (
+          <View key={zone.id} style={styles.zoneCard}>
+            <Pressable
+              accessibilityHint="Mở chi tiết khu canh tác"
+              accessibilityRole="button"
+              accessibilityLabel={`Xem chi tiết ${zone.name}`}
+              onPress={() => onViewZone(zone)}
+              style={styles.zoneSummary}
+            >
+              <View style={styles.zoneTop}>
+                <View style={styles.zoneCopy}>
+                  <Text style={styles.zoneTitle}>{zone.name}</Text>
+                  <Text style={styles.zoneMeta}>
+                    {zone.code || "Chưa có mã"} ·{" "}
+                    {zoneStatusLabels[zone.status]}
+                  </Text>
+                </View>
+                <View style={styles.zoneOpen}>
+                  <Text style={styles.zoneOpenText}>Chi tiết</Text>
+                  <ChevronRight color={durianTheme.colors.moss} size={18} />
+                </View>
+              </View>
+
+              <Text numberOfLines={2} style={styles.zoneDescription}>
+                {zone.description || "Chưa có mô tả khu canh tác."}
+              </Text>
+              <Text style={styles.zoneArea}>
+                {zone.areaSquareMeters == null
+                  ? "Diện tích chưa có"
+                  : `${zone.areaSquareMeters} m²`}
+              </Text>
+            </Pressable>
+
+            {canManage ? (
+              <View style={styles.inlineActions}>
+                <SmallAction
+                  icon={CalendarDays}
+                  label="Tạo mùa"
+                  onPress={() => onCreateSeason(zone)}
+                />
+                <SmallAction
+                  icon={Pencil}
+                  label="Sửa"
+                  onPress={() => onEditZone(zone)}
+                />
+                <SmallAction
+                  icon={Archive}
+                  label="Lưu"
+                  danger
+                  onPress={() => onArchiveZone(zone)}
+                />
+              </View>
+            ) : null}
+          </View>
+        ))
+      ) : (
+        <EmptyCard
+          title="Chưa có khu canh tác"
+          body="Thêm khu để liên kết mùa vụ, kế hoạch và công việc chăm sóc."
+        />
+      )}
+
+      <Text style={styles.subsectionTitle}>Mùa vụ</Text>
+      {seasons.length ? (
+        seasons.map((season) => (
+          <View key={season.id} style={styles.seasonRow}>
+            <CalendarDays color={durianTheme.colors.moss} size={18} />
+            <View style={styles.seasonCopy}>
+              <Text style={styles.seasonTitle}>{season.name}</Text>
+              <Text style={styles.seasonMeta}>
+                {season.crop || "Cây trồng chưa có"} ·{" "}
+                {season.variety || "Giống chưa có"}
+              </Text>
+              <Text style={styles.seasonMeta}>
+                {dateLabel(season.startDate)} → {dateLabel(season.endDate)}
+              </Text>
+            </View>
+            {canManage ? (
+              <SmallAction
+                icon={Pencil}
+                label="Sửa"
+                onPress={() => onEditSeason(season)}
+              />
+            ) : null}
+          </View>
+        ))
+      ) : (
+        <EmptyCard
+          title="Chưa có mùa vụ"
+          body="Tạo mùa vụ từ một khu canh tác."
+        />
+      )}
+    </View>
+  );
+}
+
+function ZoneDetailModal({
+  canManage,
+  detail,
+  onArchive,
+  onClose,
+  onCreateSeason,
+  onEdit,
+  seasons,
+}: {
+  canManage: boolean;
+  detail: { farm: FarmCatalog; zone: FarmZoneCatalog } | null;
+  onArchive: () => void;
+  onClose: () => void;
+  onCreateSeason: () => void;
+  onEdit: () => void;
+  seasons: CultivationSeason[];
+}) {
+  if (!detail) return null;
+
+  const { farm, zone } = detail;
+  const zoneSeasons = seasons.filter((season) => season.plotId === zone.id);
+
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} visible>
+      <SafeAreaProvider>
+        <SafeAreaView style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Quay lại danh sách khu canh tác"
+              onPress={onClose}
+              style={styles.iconButton}
+            >
+              <ArrowLeft color={durianTheme.colors.ink} size={21} />
+            </Pressable>
+            <Text style={styles.modalTitle}>Chi tiết khu canh tác</Text>
+            <View style={styles.iconButton} />
+          </View>
+
+          <ScrollView contentContainerStyle={styles.modalContent}>
+            <View style={styles.zoneDetailHero}>
+              <Text style={styles.zoneDetailEyebrow}>KHU CANH TÁC</Text>
+              <Text style={styles.zoneDetailTitle}>{zone.name}</Text>
+              <Text style={styles.zoneDetailSubtitle}>
+                {zone.code
+                  ? `Mã khu: ${zone.code}`
+                  : "Dữ liệu catalog thật từ backend."}
+              </Text>
+            </View>
+
+            <View style={styles.zoneFactsGrid}>
+              <DetailFact label="Trang trại" value={farm.name} />
+              <DetailFact
+                label="Diện tích"
+                value={areaHectareLabel(zone.areaSquareMeters)}
+              />
+              <DetailFact label="Mã khu" value={zone.code || "Chưa cập nhật"} />
+              <DetailFact
+                label="Trạng thái sử dụng"
+                value={zoneStatusLabels[zone.status]}
+              />
+              <DetailFact
+                label="Số mùa vụ"
+                value={String(zoneSeasons.length)}
+              />
+              <DetailFact label="Cập nhật" value={dateLabel(zone.updatedAt)} />
+            </View>
+
+            <View style={styles.zoneDescriptionPanel}>
+              <Text style={styles.fieldLabel}>Mô tả khu canh tác</Text>
+              <Text style={styles.zoneDescription}>
+                {zone.description || "Chưa cập nhật ghi chú khu canh tác."}
+              </Text>
+              <Text style={styles.infoLabel}>Địa chỉ trang trại</Text>
+              <Text style={styles.zoneLocation}>
+                {[farm.address, farm.district, farm.province]
+                  .filter(Boolean)
+                  .join(", ") || "Vị trí chưa được cập nhật."}
+              </Text>
+            </View>
+
+            <View style={styles.zoneSeasonPanel}>
+              <Text style={styles.subsectionTitle}>Mùa vụ liên kết</Text>
+              {zoneSeasons.length ? (
+                zoneSeasons.map((season) => (
+                  <View key={season.id} style={styles.seasonRow}>
+                    <CalendarDays color={durianTheme.colors.moss} size={18} />
+                    <View style={styles.seasonCopy}>
+                      <Text style={styles.seasonTitle}>{season.name}</Text>
+                      <Text style={styles.seasonMeta}>
+                        {season.crop || "Cây trồng chưa có"} ·{" "}
+                        {season.variety || "Giống chưa có"}
+                      </Text>
+                      <Text style={styles.seasonMeta}>
+                        {dateLabel(season.startDate)} →{" "}
+                        {dateLabel(season.endDate)}
+                      </Text>
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.subsectionCopy}>
+                  Chưa có mùa vụ liên kết với khu này.
+                </Text>
+              )}
+            </View>
+
+            {canManage ? (
+              <View style={styles.detailActions}>
+                <Pressable
+                  onPress={onCreateSeason}
+                  style={styles.primaryButton}
+                >
+                  <CalendarDays color={durianTheme.colors.white} size={18} />
+                  <Text style={styles.primaryButtonText}>Tạo mùa vụ</Text>
+                </Pressable>
+                <View style={styles.inlineActions}>
+                  <SmallAction icon={Pencil} label="Sửa khu" onPress={onEdit} />
+                  <SmallAction
+                    icon={Archive}
+                    label="Lưu trữ"
+                    danger
+                    onPress={onArchive}
+                  />
+                </View>
+              </View>
+            ) : null}
+          </ScrollView>
+        </SafeAreaView>
+      </SafeAreaProvider>
+    </Modal>
+  );
+}
+
+function FarmEditor({
+  editor,
+  saving,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  editor: { farm?: FarmCatalog; draft: FarmForm } | null;
+  saving: boolean;
+  onChange: (value: { farm?: FarmCatalog; draft: FarmForm } | null) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  if (!editor) return null;
+  const update = (next: Partial<FarmForm>) =>
+    onChange({ ...editor, draft: { ...editor.draft, ...next } });
+  return (
+    <EditorModal
+      title={editor.farm ? "Sửa farm" : "Tạo farm"}
+      saving={saving}
+      onClose={onClose}
+      onSubmit={onSubmit}
+    >
+      <Field
+        label="Tên farm *"
+        value={editor.draft.name}
+        onChangeText={(name) => update({ name })}
+      />
+      <Field
+        label="Địa chỉ"
+        value={editor.draft.address ?? ""}
+        onChangeText={(address) => update({ address })}
+      />
+      <Field
+        label="Tỉnh / thành"
+        value={editor.draft.province ?? ""}
+        onChangeText={(province) => update({ province })}
+      />
+      <Field
+        label="Quận / huyện"
+        value={editor.draft.district ?? ""}
+        onChangeText={(district) => update({ district })}
+      />
+      <NumberField
+        label="Diện tích (ha)"
+        value={editor.draft.areaHectares}
+        onChange={(areaHectares) => update({ areaHectares })}
+      />
+      <NumberField
+        label="Vĩ độ"
+        value={editor.draft.latitude}
+        onChange={(latitude) => update({ latitude })}
+      />
+      <NumberField
+        label="Kinh độ"
+        value={editor.draft.longitude}
+        onChange={(longitude) => update({ longitude })}
+      />
+      {editor.farm ? (
+        <ChoiceRow
+          label="Trạng thái"
+          options={["ACTIVE", "INACTIVE", "ARCHIVED"] as FarmStatus[]}
+          value={editor.draft.status}
+          onChange={(status) => update({ status })}
+        />
+      ) : null}
+    </EditorModal>
+  );
+}
+
+function ZoneEditor({
+  editor,
+  saving,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  editor: { farmId: string; zone?: FarmZoneCatalog; draft: ZoneForm } | null;
+  saving: boolean;
+  onChange: (
+    value: { farmId: string; zone?: FarmZoneCatalog; draft: ZoneForm } | null,
+  ) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  if (!editor) return null;
+  const update = (next: Partial<ZoneForm>) =>
+    onChange({ ...editor, draft: { ...editor.draft, ...next } });
+  return (
+    <EditorModal
+      title={editor.zone ? "Sửa khu canh tác" : "Tạo khu canh tác"}
+      saving={saving}
+      onClose={onClose}
+      onSubmit={onSubmit}
+    >
+      <Field
+        label="Tên khu *"
+        value={editor.draft.name}
+        onChangeText={(name) => update({ name })}
+      />
+      <Field
+        label="Mã khu"
+        value={editor.draft.code ?? ""}
+        onChangeText={(code) => update({ code })}
+      />
+      <NumberField
+        label="Diện tích (m²)"
+        value={editor.draft.areaSquareMeters}
+        onChange={(areaSquareMeters) => update({ areaSquareMeters })}
+      />
+      <Field
+        label="Mô tả"
+        multiline
+        value={editor.draft.description ?? ""}
+        onChangeText={(description) => update({ description })}
+      />
+      {editor.zone ? (
+        <ChoiceRow
+          label="Trạng thái"
+          options={
+            [
+              "ACTIVE",
+              "INACTIVE",
+              "QUARANTINED",
+              "ARCHIVED",
+            ] as FarmZoneStatus[]
+          }
+          value={editor.draft.status}
+          onChange={(status) => update({ status })}
+        />
+      ) : null}
+    </EditorModal>
+  );
+}
+
+function SeasonEditor({
+  editor,
+  saving,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  editor: {
+    farmId: string;
+    zoneId: string;
+    season?: CultivationSeason;
+    draft: SeasonForm;
+  } | null;
+  saving: boolean;
+  onChange: (
+    value: {
+      farmId: string;
+      zoneId: string;
+      season?: CultivationSeason;
+      draft: SeasonForm;
+    } | null,
+  ) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  if (!editor) return null;
+  const update = (next: Partial<SeasonForm>) =>
+    onChange({ ...editor, draft: { ...editor.draft, ...next } });
+  return (
+    <EditorModal
+      title={editor.season ? "Sửa mùa vụ" : "Tạo mùa vụ"}
+      saving={saving}
+      onClose={onClose}
+      onSubmit={onSubmit}
+    >
+      <Field
+        label="Tên mùa vụ *"
+        value={editor.draft.name}
+        onChangeText={(name) => update({ name })}
+      />
+      <Field
+        label="Ngày bắt đầu (YYYY-MM-DD) *"
+        value={editor.draft.startDate}
+        onChangeText={(startDate) => update({ startDate })}
+      />
+      <Field
+        label="Ngày kết thúc (YYYY-MM-DD)"
+        value={editor.draft.endDate ?? ""}
+        onChangeText={(endDate) => update({ endDate })}
+      />
+      <Field
+        label="Cây trồng"
+        value={editor.draft.crop ?? ""}
+        onChangeText={(crop) => update({ crop })}
+      />
+      <Field
+        label="Giống"
+        value={editor.draft.variety ?? ""}
+        onChangeText={(variety) => update({ variety })}
+      />
+    </EditorModal>
+  );
+}
+
+function EditorModal({
+  children,
+  onClose,
+  onSubmit,
+  saving,
+  title,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+  onSubmit: () => void;
+  saving: boolean;
+  title: string;
+}) {
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} visible>
+      <SafeAreaView style={styles.modalSafeArea}>
+        <View style={styles.modalHeader}>
+          <Pressable onPress={onClose} style={styles.iconButton}>
+            <X color={durianTheme.colors.ink} size={20} />
+          </Pressable>
+          <Text style={styles.modalTitle}>{title}</Text>
+          <View style={styles.iconButton} />
+        </View>
+        <ScrollView
+          contentContainerStyle={styles.modalContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {children}
+          <Pressable
+            disabled={saving}
+            onPress={onSubmit}
+            style={[styles.primaryButton, saving && styles.disabled]}
+          >
+            {saving ? (
+              <ActivityIndicator color={durianTheme.colors.white} />
+            ) : (
+              <Plus color={durianTheme.colors.white} size={18} />
+            )}
+            <Text style={styles.primaryButtonText}>
+              {saving ? "Đang lưu..." : "Lưu vào backend"}
+            </Text>
+          </Pressable>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+function Field({
+  label,
+  multiline,
+  onChangeText,
+  value,
+}: {
+  label: string;
+  multiline?: boolean;
+  onChangeText: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        multiline={multiline}
+        onChangeText={onChangeText}
+        style={[styles.input, multiline && styles.textarea]}
+        value={value}
+      />
+    </View>
+  );
+}
+
+function NumberField({
+  label,
+  onChange,
+  value,
+}: {
+  label: string;
+  onChange: (value: number | null) => void;
+  value?: number | null;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        keyboardType="decimal-pad"
+        onChangeText={(next) =>
+          onChange(next.trim() ? numberValue(next) : null)
+        }
+        style={styles.input}
+        value={value == null ? "" : String(value)}
+      />
+    </View>
+  );
+}
+
+function ChoiceRow<T extends string>({
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  label: string;
+  onChange: (value: T) => void;
+  options: T[];
+  value: T;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.choiceRow}>
+        {options.map((option) => (
+          <Pressable
+            key={option}
+            onPress={() => onChange(option)}
+            style={[styles.choice, option === value && styles.choiceActive]}
+          >
+            <Text
+              style={[
+                styles.choiceText,
+                option === value && styles.choiceTextActive,
+              ]}
+            >
+              {option}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function SmallAction({
+  danger,
+  icon: Icon,
+  label,
+  onPress,
+}: {
+  danger?: boolean;
+  icon: typeof Plus;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.smallAction, danger && styles.smallActionDanger]}
+    >
+      <Icon
+        color={danger ? durianTheme.colors.danger : durianTheme.colors.moss}
+        size={14}
+      />
+      <Text
+        style={[styles.smallActionText, danger && styles.smallActionDangerText]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function DetailFact({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.zoneFact}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
+    </View>
+  );
+}
+
+function LoadingCard() {
+  return (
+    <View style={styles.loadingCard}>
+      <ActivityIndicator color={durianTheme.colors.moss} />
+      <Text style={styles.loadingText}>
+        Đang tải catalog thật từ backend...
+      </Text>
+    </View>
+  );
+}
+
+function ErrorCard({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <View style={styles.errorCard}>
+      <Text style={styles.errorText}>{message}</Text>
+      <Pressable onPress={onRetry} style={styles.retryButton}>
+        <Text style={styles.retryText}>Thử lại</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function EmptyCard({ body, title }: { body: string; title: string }) {
+  return (
+    <View style={styles.emptyCard}>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptyText}>{body}</Text>
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
-  authorizedMeta: { color: durianTheme.colors.muted, fontSize: 12, fontWeight: "700", marginTop: 3 }, authorizedRow: { borderTopColor: durianTheme.colors.border, borderTopWidth: 1, paddingTop: 11 }, authorizedTitle: { color: durianTheme.colors.ink, fontSize: 14, fontWeight: "900" }, choice: { borderColor: durianTheme.colors.border, borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 7 }, choiceActive: { backgroundColor: durianTheme.colors.moss, borderColor: durianTheme.colors.moss }, choiceRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 }, choiceText: { color: durianTheme.colors.moss, fontSize: 11, fontWeight: "900" }, choiceTextActive: { color: durianTheme.colors.white }, content: { gap: durianTheme.spacing.lg, padding: durianTheme.spacing.lg, paddingBottom: 40 }, detailCopy: { flex: 1 }, detailHeader: { flexDirection: "row", gap: 10, justifyContent: "space-between" }, detailMeta: { color: durianTheme.colors.muted, fontSize: 12, fontWeight: "700", marginTop: 3 }, detailPanel: { backgroundColor: durianTheme.colors.surface, borderColor: durianTheme.colors.border, borderRadius: durianTheme.radius.md, borderWidth: 1, gap: 15, padding: durianTheme.spacing.lg }, detailTitle: { color: durianTheme.colors.ink, fontSize: 20, fontWeight: "900" }, disabled: { opacity: 0.6 }, emptyCard: { backgroundColor: durianTheme.colors.surfaceSecondary, borderColor: durianTheme.colors.border, borderRadius: durianTheme.radius.md, borderWidth: 1, gap: 6, padding: durianTheme.spacing.lg }, emptyText: { color: durianTheme.colors.muted, fontSize: 13, fontWeight: "700", lineHeight: 20 }, emptyTitle: { color: durianTheme.colors.ink, fontSize: 15, fontWeight: "900" }, errorCard: { backgroundColor: durianTheme.colors.dangerSoft, borderRadius: durianTheme.radius.md, gap: 9, padding: durianTheme.spacing.md }, errorText: { color: durianTheme.colors.danger, fontSize: 13, fontWeight: "800" }, farmChip: { backgroundColor: durianTheme.colors.surfaceSecondary, borderColor: durianTheme.colors.border, borderRadius: durianTheme.radius.pill, borderWidth: 1, maxWidth: 180, paddingHorizontal: 14, paddingVertical: 10 }, farmChipActive: { backgroundColor: durianTheme.colors.moss, borderColor: durianTheme.colors.moss }, farmChipText: { color: durianTheme.colors.moss, fontSize: 12, fontWeight: "900" }, farmChipTextActive: { color: durianTheme.colors.white }, farmRail: { gap: 8 }, field: { gap: 7 }, fieldLabel: { color: durianTheme.colors.ink, fontSize: 13, fontWeight: "900" }, iconButton: { alignItems: "center", height: 36, justifyContent: "center", width: 36 }, infoGrid: { gap: 8 }, infoLabel: { color: durianTheme.colors.muted, fontSize: 11, fontWeight: "800" }, infoRow: { backgroundColor: durianTheme.colors.canvas, borderRadius: durianTheme.radius.sm, gap: 3, padding: 11 }, infoValue: { color: durianTheme.colors.ink, fontSize: 13, fontWeight: "800" }, inlineActions: { flexDirection: "row", flexWrap: "wrap", gap: 7 }, input: { backgroundColor: durianTheme.colors.canvas, borderColor: durianTheme.colors.border, borderRadius: durianTheme.radius.sm, borderWidth: 1, color: durianTheme.colors.ink, fontSize: 14, fontWeight: "700", minHeight: 44, paddingHorizontal: 12, paddingVertical: 10 }, loadingCard: { alignItems: "center", backgroundColor: durianTheme.colors.surface, borderColor: durianTheme.colors.border, borderRadius: durianTheme.radius.md, borderWidth: 1, flexDirection: "row", gap: 10, justifyContent: "center", padding: durianTheme.spacing.lg }, loadingText: { color: durianTheme.colors.muted, fontSize: 13, fontWeight: "800" }, modalContent: { gap: 15, padding: durianTheme.spacing.xl, paddingBottom: 42 }, modalHeader: { alignItems: "center", borderBottomColor: durianTheme.colors.border, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", minHeight: 58, paddingHorizontal: durianTheme.spacing.lg }, modalSafeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 }, modalTitle: { color: durianTheme.colors.ink, fontSize: 17, fontWeight: "900" }, primaryButton: { alignItems: "center", backgroundColor: durianTheme.colors.moss, borderRadius: durianTheme.radius.sm, flexDirection: "row", gap: 8, justifyContent: "center", minHeight: 46, paddingHorizontal: 16 }, primaryButtonText: { color: durianTheme.colors.white, fontSize: 14, fontWeight: "900" }, readOnlyHeading: { alignItems: "center", flexDirection: "row", gap: 8 }, readOnlyPanel: { backgroundColor: durianTheme.colors.surface, borderColor: durianTheme.colors.border, borderRadius: durianTheme.radius.md, borderWidth: 1, gap: 11, padding: durianTheme.spacing.lg }, retryButton: { alignSelf: "flex-start", backgroundColor: durianTheme.colors.surface, borderRadius: durianTheme.radius.pill, paddingHorizontal: 12, paddingVertical: 8 }, retryText: { color: durianTheme.colors.danger, fontSize: 12, fontWeight: "900" }, safeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 }, seasonCopy: { flex: 1 }, seasonMeta: { color: durianTheme.colors.muted, fontSize: 12, fontWeight: "700", marginTop: 2 }, seasonRow: { alignItems: "flex-start", backgroundColor: durianTheme.colors.canvas, borderRadius: durianTheme.radius.sm, flexDirection: "row", gap: 10, padding: 12 }, seasonTitle: { color: durianTheme.colors.ink, fontSize: 14, fontWeight: "900" }, sectionHeader: { alignItems: "center", flexDirection: "row", gap: 10, justifyContent: "space-between" }, sectionTitle: { color: durianTheme.colors.ink, fontSize: 17, fontWeight: "900" }, smallAction: { alignItems: "center", backgroundColor: durianTheme.colors.mossSoft, borderRadius: durianTheme.radius.pill, flexDirection: "row", gap: 4, paddingHorizontal: 9, paddingVertical: 7 }, smallActionDanger: { backgroundColor: durianTheme.colors.dangerSoft }, smallActionDangerText: { color: durianTheme.colors.danger }, smallActionText: { color: durianTheme.colors.moss, fontSize: 11, fontWeight: "900" }, subsectionCopy: { color: durianTheme.colors.muted, fontSize: 11, fontWeight: "700", marginTop: 2 }, subsectionTitle: { color: durianTheme.colors.ink, fontSize: 15, fontWeight: "900" }, textarea: { minHeight: 92, textAlignVertical: "top" }, toolbar: { alignItems: "center", backgroundColor: durianTheme.colors.surfaceSecondary, borderRadius: durianTheme.radius.md, flexDirection: "row", gap: 10, justifyContent: "space-between", padding: 12 }, toolbarText: { color: durianTheme.colors.muted, flex: 1, fontSize: 12, fontWeight: "700", lineHeight: 18 }, zoneArea: { color: durianTheme.colors.moss, fontSize: 12, fontWeight: "900" }, zoneCard: { backgroundColor: durianTheme.colors.surfaceSecondary, borderColor: durianTheme.colors.border, borderRadius: durianTheme.radius.sm, borderWidth: 1, gap: 8, padding: 12 }, zoneCopy: { flex: 1 }, zoneDescription: { color: durianTheme.colors.muted, fontSize: 12, fontWeight: "700", lineHeight: 18 }, zoneMeta: { color: durianTheme.colors.muted, fontSize: 11, fontWeight: "800", marginTop: 2 }, zoneTitle: { color: durianTheme.colors.ink, fontSize: 14, fontWeight: "900" }, zoneTop: { alignItems: "center", flexDirection: "row", gap: 8 },
+  authorizedMeta: {
+    color: durianTheme.colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+
+  authorizedRow: {
+    borderTopColor: durianTheme.colors.border,
+    borderTopWidth: 1,
+    paddingTop: 11,
+  },
+
+  authorizedTitle: {
+    color: durianTheme.colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  choice: {
+    borderColor: durianTheme.colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+
+  choiceActive: {
+    backgroundColor: durianTheme.colors.moss,
+    borderColor: durianTheme.colors.moss,
+  },
+
+  choiceRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+
+  choiceText: {
+    color: durianTheme.colors.moss,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  choiceTextActive: { color: durianTheme.colors.white },
+
+  content: {
+    gap: durianTheme.spacing.lg,
+    padding: durianTheme.spacing.lg,
+    paddingBottom: 40,
+  },
+
+  detailActions: { gap: 10 },
+
+  detailCopy: { flexGrow: 1, flexBasis: 180, minWidth: 0 },
+
+  detailHeader: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    justifyContent: "space-between",
+  },
+
+  detailMeta: {
+    color: durianTheme.colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+
+  detailPanel: {
+    backgroundColor: durianTheme.colors.surface,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
+    borderWidth: 1,
+    gap: 15,
+    padding: durianTheme.spacing.lg,
+  },
+
+  detailTitle: {
+    color: durianTheme.colors.ink,
+    fontSize: 20,
+    fontWeight: "900",
+  },
+
+  disabled: { opacity: 0.6 },
+
+  emptyCard: {
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
+    borderWidth: 1,
+    gap: 6,
+    padding: durianTheme.spacing.lg,
+  },
+
+  emptyText: {
+    color: durianTheme.colors.muted,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
+
+  emptyTitle: {
+    color: durianTheme.colors.ink,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  errorCard: {
+    backgroundColor: durianTheme.colors.dangerSoft,
+    borderRadius: durianTheme.radius.md,
+    gap: 9,
+    padding: durianTheme.spacing.md,
+  },
+
+  errorText: {
+    color: durianTheme.colors.danger,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  farmChip: {
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.pill,
+    borderWidth: 1,
+    maxWidth: 180,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+
+  farmChipActive: {
+    backgroundColor: durianTheme.colors.moss,
+    borderColor: durianTheme.colors.moss,
+  },
+
+  farmChipText: {
+    color: durianTheme.colors.moss,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  farmChipTextActive: { color: durianTheme.colors.white },
+
+  farmRail: { gap: 8 },
+
+  farmSummary: {
+    backgroundColor: durianTheme.colors.canvas,
+    borderRadius: durianTheme.radius.sm,
+    gap: 4,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+
+  farmSummaryText: {
+    color: durianTheme.colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  field: { gap: 7 },
+
+  fieldLabel: {
+    color: durianTheme.colors.ink,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  iconButton: {
+    alignItems: "center",
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+    flexShrink: 0,
+  },
+
+  infoGrid: { gap: 8 },
+
+  infoLabel: {
+    color: durianTheme.colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+
+  infoValue: { color: durianTheme.colors.ink, fontSize: 13, fontWeight: "800" },
+
+  inlineActions: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+
+  input: {
+    backgroundColor: durianTheme.colors.canvas,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.sm,
+    borderWidth: 1,
+    color: durianTheme.colors.ink,
+    fontSize: 14,
+    fontWeight: "700",
+    minHeight: 44,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+
+  loadingCard: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.surface,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "center",
+    padding: durianTheme.spacing.lg,
+  },
+
+  loadingText: {
+    color: durianTheme.colors.muted,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  modalContent: { gap: 15, padding: durianTheme.spacing.xl, paddingBottom: 42 },
+
+  modalHeader: {
+    alignItems: "center",
+    borderBottomColor: durianTheme.colors.border,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 58,
+    paddingHorizontal: durianTheme.spacing.lg,
+  },
+
+  modalSafeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 },
+
+  modalTitle: {
+    color: durianTheme.colors.ink,
+    fontSize: 17,
+    fontWeight: "900",
+    flex: 1,
+    minWidth: 0,
+    textAlign: "center",
+  },
+
+  primaryButton: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.moss,
+    borderRadius: durianTheme.radius.sm,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    minHeight: 46,
+    paddingHorizontal: 16,
+  },
+
+  primaryButtonText: {
+    color: durianTheme.colors.white,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  readOnlyHeading: { alignItems: "center", flexDirection: "row", gap: 8 },
+
+  readOnlyPanel: {
+    backgroundColor: durianTheme.colors.surface,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.md,
+    borderWidth: 1,
+    gap: 11,
+    padding: durianTheme.spacing.lg,
+  },
+
+  retryButton: {
+    alignSelf: "flex-start",
+    backgroundColor: durianTheme.colors.surface,
+    borderRadius: durianTheme.radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+
+  retryText: {
+    color: durianTheme.colors.danger,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  safeArea: { backgroundColor: durianTheme.colors.canvas, flex: 1 },
+
+  seasonCopy: { flex: 1 },
+
+  seasonMeta: {
+    color: durianTheme.colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+
+  seasonRow: {
+    alignItems: "flex-start",
+    backgroundColor: durianTheme.colors.canvas,
+    borderRadius: durianTheme.radius.sm,
+    flexDirection: "row",
+    gap: 10,
+    padding: 12,
+  },
+
+  seasonTitle: {
+    color: durianTheme.colors.ink,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  sectionHeader: { gap: 6, alignSelf: "stretch" },
+
+  sectionHeadingRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  sectionHeadingTitle: {
+    color: durianTheme.colors.ink,
+    fontSize: 15,
+    fontWeight: "900",
+    flexGrow: 1,
+    flexBasis: 140,
+    minWidth: 0,
+  },
+
+  sectionTitle: {
+    color: durianTheme.colors.ink,
+    fontSize: 17,
+    fontWeight: "900",
+  },
+
+  smallAction: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.mossSoft,
+    borderRadius: durianTheme.radius.pill,
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    minHeight: 44,
+    maxWidth: "100%",
+    flexShrink: 0,
+  },
+
+  smallActionDanger: { backgroundColor: durianTheme.colors.dangerSoft },
+
+  smallActionDangerText: { color: durianTheme.colors.danger },
+
+  smallActionText: {
+    color: durianTheme.colors.moss,
+    fontSize: 11,
+    fontWeight: "900",
+    flexShrink: 1,
+  },
+
+  subsectionCopy: {
+    color: durianTheme.colors.muted,
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+
+  subsectionTitle: {
+    color: durianTheme.colors.ink,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  textarea: { minHeight: 92, textAlignVertical: "top" },
+
+  toolbar: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderRadius: durianTheme.radius.md,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    padding: 12,
+  },
+
+  toolbarText: {
+    color: durianTheme.colors.muted,
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+
+  zoneArea: { color: durianTheme.colors.moss, fontSize: 12, fontWeight: "900" },
+
+  zoneCard: {
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.sm,
+    borderWidth: 1,
+    gap: 8,
+    padding: 12,
+  },
+
+  zoneCopy: { flex: 1 },
+
+  zoneDescription: {
+    color: durianTheme.colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+
+  zoneDescriptionPanel: {
+    backgroundColor: durianTheme.colors.surface,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.sm,
+    borderWidth: 1,
+    gap: 9,
+    padding: 14,
+  },
+
+  zoneDetailEyebrow: {
+    color: durianTheme.colors.moss,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+  },
+
+  zoneDetailHero: {
+    backgroundColor: durianTheme.colors.mossSoft,
+    borderRadius: durianTheme.radius.md,
+    gap: 5,
+    padding: durianTheme.spacing.lg,
+  },
+
+  zoneDetailSubtitle: {
+    color: durianTheme.colors.muted,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  zoneDetailTitle: {
+    color: durianTheme.colors.ink,
+    fontSize: 23,
+    fontWeight: "900",
+  },
+
+  zoneFact: {
+    backgroundColor: durianTheme.colors.surface,
+    borderColor: durianTheme.colors.border,
+    borderRadius: durianTheme.radius.sm,
+    borderWidth: 1,
+    flexGrow: 1,
+    flexBasis: "47%",
+    minWidth: 0,
+    gap: 3,
+    padding: 12,
+  },
+
+  zoneFactsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+
+  zoneLocation: {
+    color: durianTheme.colors.ink,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
+
+  zoneMeta: {
+    color: durianTheme.colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+
+  zoneOpen: { alignItems: "center", flexDirection: "row", gap: 2 },
+
+  zoneOpenText: {
+    color: durianTheme.colors.moss,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  zoneSeasonPanel: {
+    backgroundColor: durianTheme.colors.surfaceSecondary,
+    borderRadius: durianTheme.radius.sm,
+    gap: 10,
+    padding: 14,
+  },
+
+  zoneSummary: { gap: 8 },
+
+  zoneTitle: { color: durianTheme.colors.ink, fontSize: 14, fontWeight: "900" },
+
+  zoneTop: { alignItems: "center", flexDirection: "row", gap: 8 },
 });

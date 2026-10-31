@@ -1,8 +1,8 @@
-export function getApiBaseUrl() {
-  const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
-  if (!baseUrl) {
-    throw new Error("Thiếu EXPO_PUBLIC_API_BASE_URL để kết nối dịch vụ.");
-  }
+import Constants from "expo-constants";
+import { Platform } from "react-native";
+import { resolveApiBaseUrl } from "./apiBaseResolver";
 
-  return baseUrl.replace(/\/$/, "");
+export function getApiBaseUrl() {
+  return resolveApiBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL, __DEV__, Constants.expoConfig?.hostUri,
+    process.env.EXPO_PUBLIC_API_GATEWAY_PORT?.trim() || "8080", Platform.OS !== "web");
 }

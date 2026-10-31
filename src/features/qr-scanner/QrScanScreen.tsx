@@ -1,4 +1,5 @@
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { useCameraPermissions } from "expo-camera";
+import { CodeScannerCamera } from "./CodeScannerCamera";
 import {
   AlertCircle,
   CheckCircle2,
@@ -242,11 +243,9 @@ export function QrScanScreen() {
       {/* Camera scanner */}
       <View style={styles.cameraWrap}>
         {scanning && (
-          <CameraView
+          <CodeScannerCamera
             style={styles.camera}
-            facing="back"
-            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-            onBarcodeScanned={(e) => void handleBarcode(e.data)}
+            onScan={(e) => void handleBarcode(e.data)}
           />
         )}
 

@@ -19,7 +19,9 @@ import type {
   ZoneSummary,
 } from "./treeTypes";
 
-export async function createFarm(body: CreateFarmRequest): Promise<FarmSummary> {
+export async function createFarm(
+  body: CreateFarmRequest,
+): Promise<FarmSummary> {
   const res = await authorizedRequest<FarmSummary>({
     method: "POST",
     url: "/api/v1/farms",
@@ -84,7 +86,9 @@ export async function listTrees(zoneId: string): Promise<TreeSummary[]> {
   return res.data;
 }
 
-export async function getZoneSafety(zoneId: string): Promise<ZoneSafetySummary> {
+export async function getZoneSafety(
+  zoneId: string,
+): Promise<ZoneSafetySummary> {
   const res = await authorizedRequest<ZoneSafetySummary>({
     method: "GET",
     url: `/api/zones/${encodeURIComponent(zoneId)}/safety-summary`,
@@ -96,6 +100,14 @@ export async function getTree(treeId: string): Promise<TreeDetail> {
   const res = await authorizedRequest<TreeDetail>({
     method: "GET",
     url: `/api/trees/${encodeURIComponent(treeId)}`,
+  });
+  return res.data;
+}
+
+export async function resolveTreeCode(code: string): Promise<TreeDetail> {
+  const res = await authorizedRequest<TreeDetail>({
+    method: "GET",
+    url: `/api/trees/resolve-code?code=${encodeURIComponent(code.trim())}`,
   });
   return res.data;
 }
@@ -183,7 +195,9 @@ export async function createCareRecommendation(
   return res.data;
 }
 
-export async function getLatestCareRecommendation(treeId: string): Promise<TreeCareRecommendation> {
+export async function getLatestCareRecommendation(
+  treeId: string,
+): Promise<TreeCareRecommendation> {
   const res = await authorizedRequest<TreeCareRecommendation>({
     method: "GET",
     url: `/api/trees/${encodeURIComponent(treeId)}/care-recommendation/latest`,
@@ -198,7 +212,12 @@ export async function acceptCareRecommendation(
     treatment?: string | null;
     startDate?: string | null;
     followUpDate?: string | null;
-    tasks?: Array<{ title?: string | null; description?: string | null; scheduledDate?: string | null; sortOrder?: number | null }>;
+    tasks?: Array<{
+      title?: string | null;
+      description?: string | null;
+      scheduledDate?: string | null;
+      sortOrder?: number | null;
+    }>;
   },
 ): Promise<TreeCarePlan> {
   const res = await authorizedRequest<TreeCarePlan>({
@@ -209,7 +228,9 @@ export async function acceptCareRecommendation(
   return res.data;
 }
 
-export async function listCarePlanTasks(planId: string): Promise<TreeCareTask[]> {
+export async function listCarePlanTasks(
+  planId: string,
+): Promise<TreeCareTask[]> {
   const res = await authorizedRequest<TreeCareTask[]>({
     method: "GET",
     url: `/api/care-plans/${encodeURIComponent(planId)}/tasks`,
@@ -217,7 +238,9 @@ export async function listCarePlanTasks(planId: string): Promise<TreeCareTask[]>
   return res.data;
 }
 
-export async function evaluateRecovery(treeId: string): Promise<RecoveryEvaluationResponse> {
+export async function evaluateRecovery(
+  treeId: string,
+): Promise<RecoveryEvaluationResponse> {
   const res = await authorizedRequest<RecoveryEvaluationResponse>({
     method: "POST",
     url: `/api/trees/${encodeURIComponent(treeId)}/evaluate-recovery`,

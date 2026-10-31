@@ -101,6 +101,7 @@ export default function DurianCareMainTabs() {
       <Tabs.Screen name="search" options={{ href: null }} />
       <Tabs.Screen name="sensors" options={{ href: null }} />
       <Tabs.Screen name="traceability" options={{ href: null }} />
+      <Tabs.Screen name="tree-scan" options={{ href: null }} />
     </Tabs>
   );
 }

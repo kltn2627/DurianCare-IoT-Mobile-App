@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Dimensions,
@@ -18,8 +19,12 @@ import { TreePine as TreePineIcon } from "lucide-react-native";
 import { durianTheme } from "@/src/theme/durianTheme";
 import { getZone, listTrees, getZoneSafety } from "./treeApi";
 import type { TreeSummary, ZoneDetail, ZoneSafetySummary } from "./treeTypes";
+import { getZoneYieldForecast, type ZoneYieldForecast } from "./yieldForecastApi";
 import { TreeDetailContent } from "./TreeDetailScreen";
-import { listCultivationSeasons, getSafeHarvestDate } from "@/src/features/cultivation/api/cultivationApi";
+import {
+  listCultivationSeasons,
+  getSafeHarvestDate,
+} from "@/src/features/cultivation/api/cultivationApi";
 import type {
   CultivationSeason,
   CultivationSeasonStatus,
@@ -65,7 +70,9 @@ function TreeMapSvg({
 }) {
   const screenWidth = Dimensions.get("window").width - 32;
   const mapHeight = screenWidth * 0.65;
-  const positionedTrees = trees.filter((t) => t.positionX != null && t.positionY != null);
+  const positionedTrees = trees.filter(
+    (t) => t.positionX != null && t.positionY != null,
+  );
 
   return (
     <View style={[styles.mapContainer, { height: mapHeight }]}>
@@ -130,7 +137,9 @@ function TreeMapSvg({
 
       {positionedTrees.length === 0 ? (
         <View style={styles.mapEmpty}>
-          <Text style={styles.mapEmptyText}>Chưa có cây nào có vị trí trên bản đồ</Text>
+          <Text style={styles.mapEmptyText}>
+            Chưa có cây nào có vị trí trên bản đồ
+          </Text>
         </View>
       ) : null}
     </View>
@@ -138,11 +147,24 @@ function TreeMapSvg({
 }
 
 function SafetySummaryCard({ summary }: { summary: ZoneSafetySummary }) {
-  const rate = summary.safetyRate != null ? Math.round(summary.safetyRate) : null;
+  const rate =
+    summary.safetyRate != null ? Math.round(summary.safetyRate) : null;
   const rateColor =
-    rate == null ? "#9ca3af" : rate >= 80 ? "#16a34a" : rate >= 50 ? "#ca8a04" : "#dc2626";
+    rate == null
+      ? "#9ca3af"
+      : rate >= 80
+        ? "#16a34a"
+        : rate >= 50
+          ? "#ca8a04"
+          : "#dc2626";
   const rateBg =
-    rate == null ? "#f3f4f6" : rate >= 80 ? "#dcfce7" : rate >= 50 ? "#fef9c3" : "#fee2e2";
+    rate == null
+      ? "#f3f4f6"
+      : rate >= 80
+        ? "#dcfce7"
+        : rate >= 50
+          ? "#fef9c3"
+          : "#fee2e2";
 
   return (
     <View style={styles.safetyCard}>
@@ -158,12 +180,22 @@ function SafetySummaryCard({ summary }: { summary: ZoneSafetySummary }) {
       <View style={styles.safetyStats}>
         {[
           { label: "Tổng cây", value: summary.totalTrees, color: "#374151" },
-          { label: "Đã đánh giá", value: summary.assessedTrees, color: "#6366f1" },
+          {
+            label: "Đã đánh giá",
+            value: summary.assessedTrees,
+            color: "#6366f1",
+          },
           { label: "Khỏe mạnh", value: summary.safeTrees, color: "#16a34a" },
-          { label: "Cần chú ý", value: summary.attentionTrees, color: "#dc2626" },
+          {
+            label: "Cần chú ý",
+            value: summary.attentionTrees,
+            color: "#dc2626",
+          },
         ].map((stat) => (
           <View key={stat.label} style={styles.statItem}>
-            <Text style={[styles.statValue, { color: stat.color }]}>{stat.value}</Text>
+            <Text style={[styles.statValue, { color: stat.color }]}>
+              {stat.value}
+            </Text>
             <Text style={styles.statLabel}>{stat.label}</Text>
           </View>
         ))}
@@ -187,12 +219,28 @@ function ActiveSeasonBanner({
     ? Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     : null;
   const endLabel = end
-    ? end.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" })
+    ? end.toLocaleDateString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
     : "Không xác định";
   const daysColor =
-    daysLeft == null ? "#6b7280" : daysLeft <= 14 ? "#dc2626" : daysLeft <= 30 ? "#ca8a04" : "#15803d";
+    daysLeft == null
+      ? "#6b7280"
+      : daysLeft <= 14
+        ? "#dc2626"
+        : daysLeft <= 30
+          ? "#ca8a04"
+          : "#15803d";
   const daysBg =
-    daysLeft == null ? "#f3f4f6" : daysLeft <= 14 ? "#fee2e2" : daysLeft <= 30 ? "#fef9c3" : "#dcfce7";
+    daysLeft == null
+      ? "#f3f4f6"
+      : daysLeft <= 14
+        ? "#fee2e2"
+        : daysLeft <= 30
+          ? "#fef9c3"
+          : "#dcfce7";
 
   const isSafeNow = safeHarvestDate != null && safeHarvestDate <= todayStr;
   const safeLabel = safeHarvestDate
@@ -205,7 +253,8 @@ function ActiveSeasonBanner({
   const daysUntilSafe =
     safeHarvestDate && safeHarvestDate > todayStr
       ? Math.ceil(
-          (new Date(safeHarvestDate).getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+          (new Date(safeHarvestDate).getTime() - today.getTime()) /
+            (1000 * 60 * 60 * 24),
         )
       : null;
   const status = season.effectiveStatus ?? season.status ?? getSeasonStatus(season, todayStr);
@@ -223,24 +272,32 @@ function ActiveSeasonBanner({
               {season.variety ? ` — ${season.variety}` : ""}
             </Text>
           ) : null}
-          <Text style={styles.seasonHarvest}>Thu hoạch dự kiến: {endLabel}</Text>
+          <Text style={styles.seasonHarvest}>
+            Thu hoạch dự kiến: {endLabel}
+          </Text>
           <Text style={styles.seasonStatus}>{statusLabel}</Text>
           {safeHarvestDate !== undefined ? (
             isSafeNow ? (
-              <Text style={styles.seasonSafeOk}>✓ Đủ điều kiện thu hoạch (từ {safeLabel})</Text>
+              <Text style={styles.seasonSafeOk}>
+                ✓ Đủ điều kiện thu hoạch (từ {safeLabel})
+              </Text>
             ) : daysUntilSafe != null ? (
               <Text style={styles.seasonSafeWait}>
                 ⚠ Còn {daysUntilSafe} ngày đến ngày an toàn ({safeLabel})
               </Text>
             ) : (
-              <Text style={styles.seasonSafeUnknown}>Chưa có dữ liệu hóa chất</Text>
+              <Text style={styles.seasonSafeUnknown}>
+                Chưa có dữ liệu hóa chất
+              </Text>
             )
           ) : null}
         </View>
       </View>
       {daysLeft != null ? (
         <View style={[styles.daysLeftBadge, { backgroundColor: daysBg }]}>
-          <Text style={[styles.daysLeftValue, { color: daysColor }]}>{daysLeft}</Text>
+          <Text style={[styles.daysLeftValue, { color: daysColor }]}>
+            {daysLeft}
+          </Text>
           <Text style={[styles.daysLeftUnit, { color: daysColor }]}>ngày</Text>
         </View>
       ) : null}
@@ -266,11 +323,17 @@ interface Props {
 }
 
 export function ZoneTreesScreen({ farmId, zoneId }: Props) {
+  const router = useRouter();
   const [zone, setZone] = useState<ZoneDetail | null>(null);
   const [trees, setTrees] = useState<TreeSummary[]>([]);
   const [safety, setSafety] = useState<ZoneSafetySummary | null>(null);
-  const [activeSeason, setActiveSeason] = useState<CultivationSeason | null>(null);
-  const [safeHarvestDate, setSafeHarvestDate] = useState<string | null | undefined>(undefined);
+  const [activeSeason, setActiveSeason] = useState<CultivationSeason | null>(
+    null,
+  );
+  const [safeHarvestDate, setSafeHarvestDate] = useState<
+    string | null | undefined
+  >(undefined);
+  const [forecast, setForecast] = useState<ZoneYieldForecast | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sheetTreeId, setSheetTreeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -285,10 +348,13 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
       getZone(zoneId),
       listTrees(zoneId),
       getZoneSafety(zoneId).catch(() => null),
-      listCultivationSeasons({ farmId, plotId: zoneId }).catch(() => [] as CultivationSeason[]),
+      listCultivationSeasons({ farmId, plotId: zoneId }).catch(
+        () => [] as CultivationSeason[],
+      ),
     ])
       .then(([zoneData, treeData, safetyData, seasons]) => {
         if (!active) return;
+        if (zoneData.farmId !== farmId) throw new Error("Vùng không thuộc trang trại được yêu cầu.");
         setZone(zoneData);
         setTrees(treeData);
         if (safetyData) setSafety(safetyData);
@@ -298,15 +364,20 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
           ) ?? null;
         setActiveSeason(currentSeason);
         if (currentSeason) {
+          getZoneYieldForecast(currentSeason.id, zoneId)
+            .then((value) => { if (active) setForecast(value); })
+            .catch(() => { if (active) setForecast(null); });
           getSafeHarvestDate(currentSeason.id)
             .then((res) => {
-              if (active) setSafeHarvestDate(res.earliestSafeHarvestDate ?? null);
+              if (active)
+                setSafeHarvestDate(res.earliestSafeHarvestDate ?? null);
             })
             .catch(() => {
               if (active) setSafeHarvestDate(null);
             });
         } else {
           setSafeHarvestDate(undefined);
+          setForecast(null);
         }
       })
       .catch((err) => {
@@ -325,7 +396,9 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
     return load();
   }, [load]);
 
-  const selectedTree = selectedId ? trees.find((t) => t.id === selectedId) : null;
+  const selectedTree = selectedId
+    ? trees.find((t) => t.id === selectedId)
+    : null;
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -333,7 +406,7 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
         eyebrow="VÙNG TRỒNG"
         icon={TreePineIcon}
         title={zone?.name ?? "Bản đồ cây"}
-        subtitle={zone?.code ?? "Theo dõi tình trạng sức khỏe cây"}
+        subtitle={`${zone?.code ?? "Bản đồ cây"} · Trang trại ${farmId}`}
       />
 
       {loading && !zone ? (
@@ -346,21 +419,33 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={{ flexDirection: "row", gap: 8 }}><Pressable onPress={() => router.back()} style={styles.mapAction}><Text style={styles.mapActionText}>← Về vùng</Text></Pressable><Pressable onPress={() => router.push("/(main)/tree-scan" as never)} style={styles.mapAction}><Text style={styles.mapActionText}>Quét mã cây</Text></Pressable></View>
           {activeSeason ? (
-            <ActiveSeasonBanner season={activeSeason} safeHarvestDate={safeHarvestDate} />
+            <ActiveSeasonBanner
+              season={activeSeason}
+              safeHarvestDate={safeHarvestDate}
+            />
           ) : null}
+          {forecast ? <View style={styles.forecastCard}><Text style={styles.forecastEyebrow}>DỰ KIẾN SẢN LƯỢNG</Text><Text style={styles.forecastValue}>{forecast.forecastableTrees ? `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(forecast.estimatedYieldKg)} kg` : "Chưa đủ dữ liệu"}</Text><Text style={styles.forecastMeta}>Đã ghi nhận {forecast.observedTrees}/{forecast.totalTrees} cây</Text>{forecast.estimatedRevenue == null ? <Text style={styles.forecastMeta}>Nhập giá dự kiến/kg để xem doanh thu dự kiến.</Text> : <Text style={styles.forecastMeta}>Doanh thu dự kiến: {new Intl.NumberFormat("vi-VN", { style: "currency", currency: forecast.currencyCode ?? "VND", maximumFractionDigits: 0 }).format(forecast.estimatedRevenue)}</Text>}</View> : null}
           {safety ? <SafetySummaryCard summary={safety} /> : null}
 
           {/* Tree Map Legend */}
           <View style={styles.legendRow}>
             {Object.entries(HEALTH_LABELS).map(([key, label]) => (
               <View key={key} style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: HEALTH_COLORS[key] }]} />
+                <View
+                  style={[
+                    styles.legendDot,
+                    { backgroundColor: HEALTH_COLORS[key] },
+                  ]}
+                />
                 <Text style={styles.legendLabel}>{label}</Text>
               </View>
             ))}
             <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: "#9ca3af" }]} />
+              <View
+                style={[styles.legendDot, { backgroundColor: "#9ca3af" }]}
+              />
               <Text style={styles.legendLabel}>Chưa đánh giá</Text>
             </View>
           </View>
@@ -380,30 +465,44 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
             >
               <View style={styles.selectedTreeHeader}>
                 <View>
-                  <Text style={styles.selectedTreeCode}>{selectedTree.treeCode}</Text>
+                  <Text style={styles.selectedTreeCode}>
+                    {selectedTree.treeCode}
+                  </Text>
                   {selectedTree.nickname ? (
-                    <Text style={styles.selectedTreeNickname}>{selectedTree.nickname}</Text>
+                    <Text style={styles.selectedTreeNickname}>
+                      {selectedTree.nickname}
+                    </Text>
                   ) : null}
                 </View>
                 {selectedTree.healthStatus ? (
                   <View
                     style={[
                       styles.healthBadge,
-                      { backgroundColor: HEALTH_BG[selectedTree.healthStatus] ?? "#f3f4f6" },
+                      {
+                        backgroundColor:
+                          HEALTH_BG[selectedTree.healthStatus] ?? "#f3f4f6",
+                      },
                     ]}
                   >
                     <Text
                       style={[
                         styles.healthBadgeText,
-                        { color: HEALTH_COLORS[selectedTree.healthStatus] ?? "#374151" },
+                        {
+                          color:
+                            HEALTH_COLORS[selectedTree.healthStatus] ??
+                            "#374151",
+                        },
                       ]}
                     >
-                      {HEALTH_LABELS[selectedTree.healthStatus] ?? selectedTree.healthStatus}
+                      {HEALTH_LABELS[selectedTree.healthStatus] ??
+                        selectedTree.healthStatus}
                     </Text>
                   </View>
                 ) : null}
               </View>
-              <Text style={styles.viewDetail}>Nhấn để xem chi tiết & chẩn đoán AI →</Text>
+              <Text style={styles.viewDetail}>
+                Nhấn để xem chi tiết & chẩn đoán AI →
+              </Text>
             </Pressable>
           ) : null}
 
@@ -415,15 +514,27 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
             onRequestClose={() => setSheetTreeId(null)}
           >
             <View style={styles.sheetOverlay}>
-              <Pressable style={styles.sheetBackdrop} onPress={() => setSheetTreeId(null)} />
+              <Pressable
+                style={styles.sheetBackdrop}
+                onPress={() => setSheetTreeId(null)}
+              />
               <View style={styles.sheetContainer}>
                 {sheetTreeId ? (
                   <TreeDetailContent
                     treeId={sheetTreeId}
                     onClose={() => setSheetTreeId(null)}
                     onDiagnosisSaved={() => {
-                      listTrees(zoneId).then(setTrees).catch(() => {});
-                      getZoneSafety(zoneId).then((s) => { if (s) setSafety(s); }).catch(() => {});
+                      listTrees(zoneId)
+                        .then(setTrees)
+                        .catch(() => {});
+                      getZoneSafety(zoneId)
+                        .then((s) => {
+                          if (s) setSafety(s);
+                        })
+                        .catch(() => {});
+                    }}
+                    onYieldSaved={() => {
+                      if (activeSeason) getZoneYieldForecast(activeSeason.id, zoneId).then(setForecast).catch(() => {});
                     }}
                     onRemoved={() => {
                       setSelectedId(null);
@@ -440,9 +551,13 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
 
           {/* Tree list */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Danh sách cây ({trees.length})</Text>
+            <Text style={styles.sectionTitle}>
+              Danh sách cây ({trees.length})
+            </Text>
             {trees.length === 0 ? (
-              <Text style={styles.emptyText}>Chưa có cây nào trong vùng này.</Text>
+              <Text style={styles.emptyText}>
+                Chưa có cây nào trong vùng này.
+              </Text>
             ) : (
               trees.map((tree) => (
                 <Pressable
@@ -475,7 +590,10 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
                       <Text
                         style={[
                           styles.treeHealthLabel,
-                          { color: HEALTH_COLORS[tree.healthStatus] ?? "#374151" },
+                          {
+                            color:
+                              HEALTH_COLORS[tree.healthStatus] ?? "#374151",
+                          },
                         ]}
                       >
                         {HEALTH_LABELS[tree.healthStatus] ?? tree.healthStatus}
@@ -483,7 +601,9 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
                     ) : (
                       <Text style={styles.treeHealthLabel}>Chưa đánh giá</Text>
                     )}
-                    <Text style={styles.treeDiagCount}>{tree.diagnosisCount} lần</Text>
+                    <Text style={styles.treeDiagCount}>
+                      {tree.diagnosisCount} lần
+                    </Text>
                   </View>
                 </Pressable>
               ))
@@ -508,7 +628,11 @@ const styles = StyleSheet.create({
     borderColor: "#fca5a5",
   },
   errorText: { fontSize: 13, color: "#dc2626", fontWeight: "600" },
-  emptyText: { fontSize: 13, color: durianTheme.colors.muted, textAlign: "center" },
+  emptyText: {
+    fontSize: 13,
+    color: durianTheme.colors.muted,
+    textAlign: "center",
+  },
 
   // Active season banner
   seasonBanner: {
@@ -522,14 +646,42 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12,
   },
-  seasonBannerLeft: { flexDirection: "row", alignItems: "flex-start", gap: 10, flex: 1 },
+  seasonBannerLeft: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    flex: 1,
+  },
   seasonBannerText: { flex: 1, gap: 2 },
-  seasonName: { fontSize: 14, fontWeight: "800", color: durianTheme.colors.ink },
+  seasonName: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: durianTheme.colors.ink,
+  },
   seasonMeta: { fontSize: 11, color: "#4b7c5e" },
-  seasonHarvest: { fontSize: 11, color: durianTheme.colors.muted, marginTop: 2 },
-  seasonStatus: { fontSize: 11, color: durianTheme.colors.moss, fontWeight: "800", marginTop: 3 },
-  seasonSafeOk: { fontSize: 11, color: "#15803d", fontWeight: "700", marginTop: 3 },
-  seasonSafeWait: { fontSize: 11, color: "#b45309", fontWeight: "700", marginTop: 3 },
+  seasonHarvest: {
+    fontSize: 11,
+    color: durianTheme.colors.muted,
+    marginTop: 2,
+  },
+  seasonStatus: {
+    fontSize: 11,
+    color: durianTheme.colors.moss,
+    fontWeight: "800",
+    marginTop: 3,
+  },
+  seasonSafeOk: {
+    fontSize: 11,
+    color: "#15803d",
+    fontWeight: "700",
+    marginTop: 3,
+  },
+  seasonSafeWait: {
+    fontSize: 11,
+    color: "#b45309",
+    fontWeight: "700",
+    marginTop: 3,
+  },
   seasonSafeUnknown: { fontSize: 11, color: "#9ca3af", marginTop: 3 },
   daysLeftBadge: {
     paddingHorizontal: 10,
@@ -555,7 +707,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  safetyTitle: { fontSize: 14, fontWeight: "800", color: durianTheme.colors.ink },
+  safetyTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: durianTheme.colors.ink,
+  },
   safetyRateBadge: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -567,8 +723,27 @@ const styles = StyleSheet.create({
   safetyStats: { flexDirection: "row", justifyContent: "space-between" },
   statItem: { alignItems: "center", flex: 1 },
   statValue: { fontSize: 18, fontWeight: "800" },
-  statLabel: { fontSize: 10, fontWeight: "600", color: "#6b7280", textAlign: "center" },
+  statLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#6b7280",
+    textAlign: "center",
+  },
   safetyNote: { fontSize: 11, color: durianTheme.colors.muted },
+
+  mapAction: { flex: 1, padding: 10, borderRadius: 10, backgroundColor: "#e8f5eb", alignItems: "center" },
+  mapActionText: { color: durianTheme.colors.mossDark, fontWeight: "800", fontSize: 12 },
+  forecastCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+    backgroundColor: "#f0fdf4",
+    padding: 16,
+    gap: 4,
+  },
+  forecastEyebrow: { fontSize: 10, fontWeight: "800", letterSpacing: 0.8, color: "#15803d" },
+  forecastValue: { fontSize: 22, fontWeight: "900", color: durianTheme.colors.ink },
+  forecastMeta: { fontSize: 12, color: durianTheme.colors.muted },
 
   // Legend
   legendRow: {
@@ -646,7 +821,10 @@ const styles = StyleSheet.create({
 
   // Inline tree detail sheet
   sheetOverlay: { flex: 1, justifyContent: "flex-end" },
-  sheetBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.45)" },
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
   sheetContainer: {
     backgroundColor: durianTheme.colors.surface,
     borderTopLeftRadius: 24,
