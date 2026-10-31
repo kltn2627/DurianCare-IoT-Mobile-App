@@ -98,6 +98,14 @@ export async function getTree(treeId: string): Promise<TreeDetail> {
   return res.data;
 }
 
+export async function resolveTreeCode(code: string): Promise<TreeDetail> {
+  const res = await authorizedRequest<TreeDetail>({
+    method: "GET",
+    url: `/api/trees/resolve-code?code=${encodeURIComponent(code.trim())}`,
+  });
+  return res.data;
+}
+
 export async function listDiagnoses(
   treeId: string,
   page = 0,

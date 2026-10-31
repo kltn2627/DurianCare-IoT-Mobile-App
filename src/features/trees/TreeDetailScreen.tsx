@@ -1,6 +1,6 @@
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -31,6 +31,9 @@ import { createCarePlan, evaluateRecovery, getTree, listCarePlans, listDiagnoses
 import type { CarePlanStatus, CreateCarePlanRequest, RecoveryEvaluationResponse, TreeCarePlan, TreeDetail, TreeDiagnosis } from "./treeTypes";
 import { knowledgeApi } from "@/src/features/knowledge/knowledgeApi";
 import type { KnowledgeArticle } from "@/src/features/knowledge/knowledgeTypes";
+import { createTreeYieldObservation, getSeasonYieldHistory, getZoneYieldForecast, listTreeYieldObservations, updateYieldForecastSettings, type SeasonYieldHistory, type TreeYieldForecast, type TreeYieldObservation, type ZoneYieldForecast } from "./yieldForecastApi";
+import { listCultivationSeasons } from "@/src/features/cultivation/api/cultivationApi";
+import type { CultivationSeason } from "@/src/features/cultivation/api/cultivationTypes";
 
 // ── Health display ────────────────────────────────────────────────────────────
 
@@ -751,9 +754,108 @@ interface ContentProps {
   treeId: string;
   onClose?: () => void;
   onDiagnosisSaved?: () => void;
+  onYieldSaved?: () => void;
 }
 
-export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved }: ContentProps) {
+function TreeYieldPanel({ treeId, farmId, zoneId, onChanged }: { treeId: string; farmId: string; zoneId: string; onChanged?: () => void }) {
+  const [season, setSeason] = useState<CultivationSeason | null>(null);
+  const [forecast, setForecast] = useState<ZoneYieldForecast | null>(null);
+  const [treeForecast, setTreeForecast] = useState<TreeYieldForecast | null>(null);
+  const [observations, setObservations] = useState<TreeYieldObservation[]>([]);
+  const [history, setHistory] = useState<SeasonYieldHistory[]>([]);
+  const [fruitCount, setFruitCount] = useState("");
+  const [weightOverride, setWeightOverride] = useState("");
+  const [note, setNote] = useState("");
+  const [price, setPrice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const reload = useCallback(async (activeSeason?: CultivationSeason) => {
+    const seasons = activeSeason ? [activeSeason] : await listCultivationSeasons({ farmId, plotId: zoneId });
+    const now = new Date();
+    const chosen = seasons.find((item) => new Date(item.startDate) <= now && (!item.endDate || new Date(item.endDate) >= now))
+      ?? seasons.filter((item) => !item.endDate || new Date(item.endDate) >= now).sort((a, b) => b.startDate.localeCompare(a.startDate))[0]
+      ?? null;
+    setSeason(chosen);
+    if (!chosen) { setForecast(null); setTreeForecast(null); setObservations([]); setHistory([]); return; }
+    const [nextForecast, nextObservations, nextHistory] = await Promise.all([
+      getZoneYieldForecast(chosen.id, zoneId),
+      listTreeYieldObservations(treeId, chosen.id),
+      getSeasonYieldHistory(chosen.id, zoneId),
+    ]);
+    setForecast(nextForecast);
+    setTreeForecast(nextForecast.trees?.find((item) => item.treeId === treeId) ?? null);
+    setObservations(nextObservations);
+    setHistory(nextHistory);
+    setPrice(nextForecast.expectedPricePerKg == null ? "" : String(nextForecast.expectedPricePerKg));
+  }, [farmId, zoneId, treeId]);
+
+  useEffect(() => { let active = true; reload().catch((e) => { if (active) setError(e instanceof Error ? e.message : "Không thể tải dự báo mùa vụ."); }); return () => { active = false; }; }, [reload]);
+
+  async function saveObservation() {
+    const count = Number(fruitCount);
+    if (!season || !Number.isInteger(count) || count < 0) { setError("Nhập số trái hợp lệ."); return; }
+    setBusy(true); setError(null); setMessage(null);
+    try {
+      await createTreeYieldObservation(treeId, { seasonId: season.id, zoneId, fruitCount: count, ...(weightOverride.trim() ? { averageFruitWeightKgOverride: Number(weightOverride) } : {}), ...(note.trim() ? { note: note.trim() } : {}) });
+      await reload(season); onChanged?.(); setFruitCount(""); setWeightOverride(""); setNote(""); setMessage("Đã lưu và tải lại số liệu từ hệ thống.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Không thể lưu ghi nhận."); }
+    finally { setBusy(false); }
+  }
+
+  async function savePrice() {
+    if (!season || !price.trim() || !Number.isFinite(Number(price)) || Number(price) < 0) { setError("Nhập giá dự kiến/kg hợp lệ."); return; }
+    setBusy(true); setError(null); setMessage(null);
+    try { await updateYieldForecastSettings(season.id, zoneId, { expectedPricePerKg: Number(price), currencyCode: "VND" }); await reload(season); onChanged?.(); setMessage("Đã lưu giá và doanh thu dự kiến."); }
+    catch (e) { setError(e instanceof Error ? e.message : "Không thể lưu giá."); }
+    finally { setBusy(false); }
+  }
+
+  async function useHistoricalWeight() {
+    if (!season || forecast?.suggestedAverageFruitWeightKg == null) return;
+    setBusy(true); setError(null); setMessage(null);
+    try {
+      await updateYieldForecastSettings(season.id, zoneId, { defaultAverageFruitWeightKg: forecast.suggestedAverageFruitWeightKg, expectedPricePerKg: forecast.expectedPricePerKg ?? undefined, currencyCode: forecast.currencyCode ?? "VND" });
+      await reload(season); onChanged?.(); setMessage("Đã dùng khối lượng trung bình lịch sử cho dự báo vụ hiện tại.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Không thể lưu khối lượng lịch sử."); }
+    finally { setBusy(false); }
+  }
+
+  return <View style={styles.card}>
+    <Text style={styles.cardTitle}>Sản lượng mùa vụ · {season?.name ?? "Chưa có vụ hiện tại"}</Text>
+    {!season ? <Text style={styles.emptyText}>Chưa có mùa vụ hiện tại cho vùng này.</Text> : <>
+      <InfoRow label="Trạng thái" value="MÙA HIỆN TẠI · DỰ KIẾN" />
+      <InfoRow label="Số trái hiện tại" value={treeForecast?.fruitCount ?? observations[0]?.fruitCount ?? "Chưa ghi nhận"} />
+      <InfoRow label="Khối lượng TB/trái" value={treeForecast?.averageFruitWeightKgUsed != null ? `${treeForecast.averageFruitWeightKgUsed} kg (${treeForecast.averageWeightSource === "ZONE_DEFAULT" ? "ZONE_SEASON_DEFAULT" : treeForecast.averageWeightSource ?? "—"})` : "Chưa đủ dữ liệu"} />
+      <InfoRow label="Sản lượng cây dự kiến" value={treeForecast?.estimatedYieldKg != null ? `${treeForecast.estimatedYieldKg} kg` : "Chưa đủ dữ liệu"} />
+      <InfoRow label="Ghi nhận gần nhất" value={treeForecast?.lastObservedAt ? new Date(treeForecast.lastObservedAt).toLocaleString("vi-VN") : "Chưa ghi nhận"} />
+      <TextInput style={styles.notesInput} keyboardType="number-pad" value={fruitCount} onChangeText={setFruitCount} placeholder="Số trái *" placeholderTextColor="#9ca3af" />
+      <TextInput style={styles.notesInput} keyboardType="decimal-pad" value={weightOverride} onChangeText={setWeightOverride} placeholder="Khối lượng kg/trái (tùy chọn)" placeholderTextColor="#9ca3af" />
+      <TextInput style={styles.notesInput} value={note} onChangeText={setNote} placeholder="Ghi chú (tùy chọn)" placeholderTextColor="#9ca3af" />
+      <Pressable disabled={busy} onPress={saveObservation} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>{busy ? "Đang lưu…" : "Ghi nhận số trái"}</Text></Pressable>
+      <Text style={styles.infoLabel}>Giá bán dự kiến (VND/kg)</Text>
+      <TextInput style={styles.notesInput} keyboardType="decimal-pad" value={price} onChangeText={setPrice} placeholder="Chưa nhập giá" placeholderTextColor="#9ca3af" />
+      <Pressable disabled={busy} onPress={savePrice} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Lưu giá và tải lại dự báo</Text></Pressable>
+      {forecast ? <>
+        <InfoRow label="Dự kiến toàn vùng" value={`${forecast.estimatedYieldKg} kg · ${forecast.observedTrees}/${forecast.totalTrees} cây đã ghi nhận`} />
+        <InfoRow label="Doanh thu dự kiến" value={forecast.estimatedRevenue == null ? "Chưa có giá" : new Intl.NumberFormat("vi-VN", { style: "currency", currency: forecast.currencyCode ?? "VND", maximumFractionDigits: 0 }).format(forecast.estimatedRevenue)} />
+        {forecast.historyAvailable ? <>
+          <InfoRow label="Vụ trước · thực tế" value={forecast.previousSeasonActualYieldKg == null ? "Chưa có" : `${forecast.previousSeasonActualYieldKg} kg`} />
+          <InfoRow label="Trung bình lịch sử · thực tế" value={forecast.historicalAverageYieldKg == null ? "Chưa có" : `${forecast.historicalAverageYieldKg} kg`} />
+          <InfoRow label="Chênh lệch với TB thực tế" value={forecast.differenceFromHistoricalAveragePercent == null ? "Chưa đủ dữ liệu" : `${forecast.differenceFromHistoricalAveragePercent > 0 ? "+" : ""}${forecast.differenceFromHistoricalAveragePercent}%`} />
+          <InfoRow label="TB lịch sử mỗi trái" value={forecast.historicalAverageFruitWeightKg == null ? "Chưa đủ dữ liệu" : `${forecast.historicalAverageFruitWeightKg} kg/trái`} />
+          {forecast.suggestedAverageFruitWeightKg != null ? <Pressable disabled={busy} onPress={useHistoricalWeight} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Dùng {forecast.suggestedAverageFruitWeightKg} kg/trái làm khối lượng ước tính</Text></Pressable> : null}
+        </> : null}
+      </> : null}
+      <Text style={styles.infoLabel}>Vụ trước · thực tế</Text>
+      {history.length ? history.map((item) => <View key={item.seasonId} style={styles.activePlanBox}><Text style={styles.activePlanValue}>{item.seasonName} · Đã kết thúc · Thực tế: {item.actualYieldKg == null ? "chưa có khối lượng" : `${item.actualYieldKg} kg`}{item.actualFruitCount == null ? "" : ` · ${item.actualFruitCount} trái`}{item.actualAverageFruitWeightKg == null ? "" : ` · ${item.actualAverageFruitWeightKg} kg/trái`}{item.actualRevenue == null ? "" : ` · doanh thu ${item.actualRevenue} ${forecast?.currencyCode ?? "VND"}`}{item.finalHarvestDate ? ` · thu cuối ${item.finalHarvestDate}` : ""}</Text></View>) : <Text style={styles.emptyText}>Chưa có dữ liệu mùa vụ trước.</Text>}
+    </>}
+    {error ? <Text style={styles.errText}>{error}</Text> : null}{message ? <Text style={styles.successText}>{message}</Text> : null}
+  </View>;
+}
+
+export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved, onYieldSaved }: ContentProps) {
   const [tree, setTree] = useState<TreeDetail | null>(null);
   const [diagnoses, setDiagnoses] = useState<TreeDiagnosis[]>([]);
   const [loading, setLoading] = useState(true);
@@ -861,6 +963,7 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved }: Content
       <AIPanel treeId={treeId} treeCode={tree.treeCode} onSaved={refresh} />
 
       {/* Tree info */}
+      <TreeYieldPanel treeId={tree.id} farmId={tree.farmId} zoneId={tree.farmZoneId} onChanged={onYieldSaved} />
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Thông tin cây</Text>
         <InfoRow label="Mã cây" value={tree.treeCode} />

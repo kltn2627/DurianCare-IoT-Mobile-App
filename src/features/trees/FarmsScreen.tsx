@@ -281,7 +281,7 @@ function ZoneRow({ zone, farmId }: { zone: ZoneSummary; farmId: string }) {
           </Text>
         ) : null}
       </View>
-      <Text style={styles.zoneTreeCount}>{zone.treeCount} cây →</Text>
+      <View style={{ alignItems: "flex-end", gap: 3 }}><Text style={styles.zoneTreeCount}>{zone.treeCount} cây</Text><Text style={styles.zoneTreeCount}>Xem bản đồ cây →</Text></View>
     </Pressable>
   );
 }

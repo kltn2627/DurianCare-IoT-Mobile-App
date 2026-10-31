@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Dimensions,
@@ -18,6 +19,7 @@ import { TreePine as TreePineIcon } from "lucide-react-native";
 import { durianTheme } from "@/src/theme/durianTheme";
 import { getZone, listTrees, getZoneSafety } from "./treeApi";
 import type { TreeSummary, ZoneDetail, ZoneSafetySummary } from "./treeTypes";
+import { getZoneYieldForecast, type ZoneYieldForecast } from "./yieldForecastApi";
 import { TreeDetailContent } from "./TreeDetailScreen";
 import {
   listCultivationSeasons,
@@ -303,6 +305,7 @@ interface Props {
 }
 
 export function ZoneTreesScreen({ farmId, zoneId }: Props) {
+  const router = useRouter();
   const [zone, setZone] = useState<ZoneDetail | null>(null);
   const [trees, setTrees] = useState<TreeSummary[]>([]);
   const [safety, setSafety] = useState<ZoneSafetySummary | null>(null);
@@ -312,6 +315,7 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
   const [safeHarvestDate, setSafeHarvestDate] = useState<
     string | null | undefined
   >(undefined);
+  const [forecast, setForecast] = useState<ZoneYieldForecast | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sheetTreeId, setSheetTreeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -332,6 +336,7 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
     ])
       .then(([zoneData, treeData, safetyData, seasons]) => {
         if (!active) return;
+        if (zoneData.farmId !== farmId) throw new Error("Vùng không thuộc trang trại được yêu cầu.");
         setZone(zoneData);
         setTrees(treeData);
         if (safetyData) setSafety(safetyData);
@@ -341,6 +346,9 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
           ) ?? null;
         setActiveSeason(currentSeason);
         if (currentSeason) {
+          getZoneYieldForecast(currentSeason.id, zoneId)
+            .then((value) => { if (active) setForecast(value); })
+            .catch(() => { if (active) setForecast(null); });
           getSafeHarvestDate(currentSeason.id)
             .then((res) => {
               if (active)
@@ -351,6 +359,7 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
             });
         } else {
           setSafeHarvestDate(undefined);
+          setForecast(null);
         }
       })
       .catch((err) => {
@@ -379,7 +388,7 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
         eyebrow="VÙNG TRỒNG"
         icon={TreePineIcon}
         title={zone?.name ?? "Bản đồ cây"}
-        subtitle={zone?.code ?? "Theo dõi tình trạng sức khỏe cây"}
+        subtitle={`${zone?.code ?? "Bản đồ cây"} · Trang trại ${farmId}`}
       />
 
       {loading && !zone ? (
@@ -392,12 +401,14 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={{ flexDirection: "row", gap: 8 }}><Pressable onPress={() => router.back()} style={styles.mapAction}><Text style={styles.mapActionText}>← Về vùng</Text></Pressable><Pressable onPress={() => router.push("/(main)/tree-scan" as never)} style={styles.mapAction}><Text style={styles.mapActionText}>Quét mã cây</Text></Pressable></View>
           {activeSeason ? (
             <ActiveSeasonBanner
               season={activeSeason}
               safeHarvestDate={safeHarvestDate}
             />
           ) : null}
+          {forecast ? <View style={styles.forecastCard}><Text style={styles.forecastEyebrow}>DỰ KIẾN SẢN LƯỢNG</Text><Text style={styles.forecastValue}>{forecast.forecastableTrees ? `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(forecast.estimatedYieldKg)} kg` : "Chưa đủ dữ liệu"}</Text><Text style={styles.forecastMeta}>Đã ghi nhận {forecast.observedTrees}/{forecast.totalTrees} cây</Text>{forecast.estimatedRevenue == null ? <Text style={styles.forecastMeta}>Nhập giá dự kiến/kg để xem doanh thu dự kiến.</Text> : <Text style={styles.forecastMeta}>Doanh thu dự kiến: {new Intl.NumberFormat("vi-VN", { style: "currency", currency: forecast.currencyCode ?? "VND", maximumFractionDigits: 0 }).format(forecast.estimatedRevenue)}</Text>}</View> : null}
           {safety ? <SafetySummaryCard summary={safety} /> : null}
 
           {/* Tree Map Legend */}
@@ -503,6 +514,9 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
                           if (s) setSafety(s);
                         })
                         .catch(() => {});
+                    }}
+                    onYieldSaved={() => {
+                      if (activeSeason) getZoneYieldForecast(activeSeason.id, zoneId).then(setForecast).catch(() => {});
                     }}
                   />
                 ) : null}
@@ -685,6 +699,20 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   safetyNote: { fontSize: 11, color: durianTheme.colors.muted },
+
+  mapAction: { flex: 1, padding: 10, borderRadius: 10, backgroundColor: "#e8f5eb", alignItems: "center" },
+  mapActionText: { color: durianTheme.colors.mossDark, fontWeight: "800", fontSize: 12 },
+  forecastCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+    backgroundColor: "#f0fdf4",
+    padding: 16,
+    gap: 4,
+  },
+  forecastEyebrow: { fontSize: 10, fontWeight: "800", letterSpacing: 0.8, color: "#15803d" },
+  forecastValue: { fontSize: 22, fontWeight: "900", color: durianTheme.colors.ink },
+  forecastMeta: { fontSize: 12, color: durianTheme.colors.muted },
 
   // Legend
   legendRow: {

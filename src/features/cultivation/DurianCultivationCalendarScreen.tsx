@@ -13,7 +13,7 @@ import {
   Search,
   X,
 } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -30,8 +30,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
 import { CompleteActivityModal } from "@/src/features/cultivation/CompleteActivityModal";
-import { groupHistoryRecords } from "@/src/features/cultivation/api/historyRecords";
-import { AuthApiError } from "@/src/features/auth/authApi";
+import { deriveRecentMaterials, groupHistoryRecords } from "@/src/features/cultivation/api/historyRecords";
+import { ResidueRiskPanel } from "@/src/features/cultivation/ResidueRiskPanel";
+import { cultivationError } from "./api/cultivationError";
+import { createHistoryCache, getCultivationRevision, notifyCultivationChanged, saveCompletionAndRefresh, subscribeCultivation } from "./api/cultivationRefresh";
 import {
   approveCultivationActivity,
   cancelCultivationActivity,
@@ -163,7 +165,7 @@ const defaultFarmSetupDraft: FarmSetupDraft = {
   crop: "DURIAN",
   farmName: "",
   seasonName: "",
-  startDate: new Date().toISOString().slice(0, 10),
+  startDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
   variety: "",
   zoneName: "",
 };
@@ -185,8 +187,7 @@ function hasPermission(role: string | undefined, permission: "view" | "managePla
 }
 
 function friendlyError(error: unknown, fallback: string) {
-  if (error instanceof AuthApiError && error.status === 403) return "Tài khoản hiện tại chưa có quyền thực hiện thao tác này.";
-  return error instanceof Error && error.message ? error.message : fallback;
+  return cultivationError(error, fallback);
 }
 
 function isActive(activity: CultivationActivity) {
@@ -243,17 +244,27 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
   const [notice, setNotice] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState("");
   const [careHistory, setCareHistory] = useState<CareHistoryResponse>(emptyCareHistory);
+  const [careHistorySeasonId, setCareHistorySeasonId] = useState("");
   const [careHistoryError, setCareHistoryError] = useState<string | null>(null);
   const [careHistoryLoading, setCareHistoryLoading] = useState(false);
 
   const role = session?.user.backendRole;
   const actorId = session?.user.id ?? "";
+  const dataRequest = useRef(0);
+  const currentActor = useRef(actorId);
+  currentActor.current = actorId;
+  const historyRequest = useRef(0);
+  const historyCache = useMemo(() => createHistoryCache(getCareHistory), [actorId]);
+  const cultivationRevision = useSyncExternalStore(subscribeCultivation, getCultivationRevision, getCultivationRevision);
+  const residueRevision = useMemo(() => ({ data, cultivationRevision }), [data, cultivationRevision]);
   const canView = hasPermission(role, "view");
   const canExecute = hasPermission(role, "execute");
   const canManagePlan = hasPermission(role, "managePlan");
 
   const loadData = useCallback(
     async function loadData(options?: { silent?: boolean }) {
+      if (currentActor.current !== actorId) return;
+      const request = ++dataRequest.current;
       if (!canView) {
         setLoading(false);
         return;
@@ -280,6 +291,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
           ...activities.value.map((activity) => activity.farmId),
         ].filter(Boolean)));
         const seasonResults = await Promise.allSettled(farmIds.map((farmId) => listCultivationSeasons({ farmId })));
+        if (request !== dataRequest.current) return;
         const next: CareData = {
           activities: activities.value,
           authorizedFarms,
@@ -304,49 +316,64 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
         setSelection((current) => reconcileFoundationSelection(next, current));
         setLastSyncedAt(new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit" }).format(new Date()));
       } catch (caught) {
+        if (request !== dataRequest.current) return;
         setError(friendlyError(caught, "Không thể tải dữ liệu lịch chăm sóc."));
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (request === dataRequest.current) { setLoading(false); setRefreshing(false); }
       }
     },
-    [canView],
+    [canView, role, actorId],
   );
 
   useEffect(() => {
     setData(emptyData);
     setCareHistory(emptyCareHistory);
+    setCareHistorySeasonId("");
     setCareHistoryError(null);
     setSelection(emptyFoundationSelection);
     setSelectedActivity(null);
+    setCompletingActivity(null);
     setFarmSetupDraft(defaultFarmSetupDraft);
     void loadData();
+    return () => { dataRequest.current++; historyRequest.current++; };
   }, [loadData, session?.user.id]);
 
   const loadCareHistory = useCallback(
-    async function loadCareHistory(seasonId = selection.seasonId) {
+    async function loadCareHistory(seasonId = selection.seasonId, force = false) {
+      if (currentActor.current !== actorId) return;
+      const request = ++historyRequest.current;
       setCareHistoryError(null);
+      setCareHistorySeasonId("");
       if (!seasonId) {
         setCareHistory(emptyCareHistory);
+        setCareHistoryLoading(false);
         return;
       }
       setCareHistoryLoading(true);
       try {
-        setCareHistory(await getCareHistory(seasonId));
+        if (force) historyCache.invalidate(seasonId);
+        const history = await historyCache.get(seasonId);
+        if (request !== historyRequest.current) return;
+        setCareHistory(history);
+        setCareHistorySeasonId(seasonId);
       } catch (caught) {
+        if (request !== historyRequest.current) return;
         setCareHistory(emptyCareHistory);
         setCareHistoryError(friendlyError(caught, "Không thể tải lịch sử chăm sóc."));
       } finally {
-        setCareHistoryLoading(false);
+        if (request === historyRequest.current) setCareHistoryLoading(false);
       }
     },
-    [selection.seasonId],
+    [selection.seasonId, historyCache, actorId],
   );
 
   useEffect(() => {
+    historyRequest.current++;
     setCareHistory(emptyCareHistory);
+    setCareHistorySeasonId("");
     setCareHistoryError(null);
     if (view === "history" && selection.seasonId) void loadCareHistory(selection.seasonId);
+    return () => { historyRequest.current++; };
   }, [loadCareHistory, selection.seasonId, view]);
 
   const farms = useMemo(() => buildFoundationFarmOptions(data), [data]);
@@ -393,7 +420,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
   function refresh() {
     setRefreshing(true);
     void loadData({ silent: true });
-    if (view === "history") void loadCareHistory();
+    if (view === "history") void loadCareHistory(selection.seasonId, true);
   }
 
   function selectFarm(farmId: string) {
@@ -561,6 +588,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
     if (action === "complete") {
       setSelectedActivity(null);
       setCompletingActivity(activity);
+      void loadCareHistory(activity.cultivationSeasonId);
       return;
     }
     setSubmitting(true);
@@ -582,10 +610,12 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
     setSubmitting(true);
     setError(null);
     try {
-      await completeCultivationActivity(id, payload);
+      const seasonId = completingActivity?.cultivationSeasonId;
+      await saveCompletionAndRefresh(() => completeCultivationActivity(id, payload), () => {
+        if (seasonId) historyCache.invalidate(seasonId);
+        notifyCultivationChanged();
+      }, [() => loadData({ silent: true }), () => seasonId ? loadCareHistory(seasonId) : Promise.resolve()]);
       setNotice("Đã ghi nhật ký thực hiện.");
-      await loadData({ silent: true });
-      if (selection.seasonId) await loadCareHistory(selection.seasonId);
     } catch (caught) {
       setError(friendlyError(caught, "Không thể hoàn thành công việc."));
       throw caught;
@@ -697,7 +727,10 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
             <TaskList activities={filteredTasks} canExecute={canExecute} emptyText="Không có công việc phù hợp bộ lọc." inputs={data.inputs} onApprove={approveActivity} onOpenDetail={setSelectedActivity} onReject={openRejectActivity} onStatusChange={changeStatus} zones={zones} />
           </View>
         ) : null}
-        {!loading && view === "history" ? <CareHistoryView error={careHistoryError} history={careHistory} loading={careHistoryLoading} onRetry={() => void loadCareHistory()} /> : null}
+        {!loading && view === "history" ? <>
+          <ResidueRiskPanel key={`${actorId}:${selection.seasonId}:${selection.zoneId}`} seasonId={selection.seasonId} plotId={selection.zoneId} revision={residueRevision} />
+          <CareHistoryView error={careHistoryError} history={careHistorySeasonId === selection.seasonId ? careHistory : emptyCareHistory} loading={careHistoryLoading} onRetry={() => void loadCareHistory(selection.seasonId, true)} />
+        </> : null}
         {!loading && view === "more" ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Kế hoạch mùa vụ</Text>
@@ -708,8 +741,8 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
         ) : null}
       </ScrollView>
       <ActivityDetailModal activity={selectedActivity} canExecute={canExecute} inputs={data.inputs} onApprove={approveActivity} onClose={() => setSelectedActivity(null)} onReject={openRejectActivity} onStatusChange={changeStatus} onUpdate={submitUpdateActivity} submitting={submitting} zones={zones} />
-      <CompleteActivityModal activity={completingActivity} actorId={actorId} actorName={session?.user.fullName ?? actorId} onClose={() => setCompletingActivity(null)} onSubmit={submitCompletion} />
-      <FarmSetupModal draft={farmSetupDraft} farms={farms} onChange={setFarmSetupDraft} onClose={() => setShowFarmSetupForm(false)} onSubmit={submitFarmSetup} seasons={seasons} submitting={submitting} visible={showFarmSetupForm} zones={zones} />
+      <CompleteActivityModal activity={completingActivity} actorId={actorId} actorName={session?.user.fullName ?? actorId} recentMaterials={careHistorySeasonId === completingActivity?.cultivationSeasonId ? deriveRecentMaterials(careHistory) : []} recentLoading={careHistoryLoading} recentError={careHistoryError} onRetryRecent={() => void loadCareHistory(completingActivity?.cultivationSeasonId, true)} onClose={() => setCompletingActivity(null)} onSubmit={submitCompletion} />
+      <FarmSetupModal draft={farmSetupDraft} farms={farms} onChange={setFarmSetupDraft} onClose={() => setShowFarmSetupForm(false)} onSubmit={submitFarmSetup} selection={selection} submitting={submitting} visible={showFarmSetupForm} zones={zones} />
       <ActivityFormModal draft={activityDraft} inputs={data.inputs} onChange={setActivityDraft} onClose={() => setShowActivityForm(false)} onSubmit={submitCreateActivity} plans={plans} submitting={submitting} visible={showActivityForm} />
       <PlanFormModal draft={planDraft} onChange={setPlanDraft} onClose={() => setShowPlanForm(false)} onSubmit={submitCreatePlan} selection={selection} submitting={submitting} visible={showPlanForm} />
       <RejectActivityModal draft={rejectDraft} onChangeReason={(reason) => setRejectDraft((current) => (current ? { ...current, reason } : current))} onClose={() => setRejectDraft(null)} onSubmit={submitRejectActivity} submitting={submitting} />
@@ -720,11 +753,12 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
 function ContextPanel({ canSetup, farms, loading, onFarmChange, onOpenSetup, onRefresh, onSeasonChange, onZoneChange, seasons, selection, warning, zones }: { canSetup: boolean; farms: CareFarmOption[]; loading: boolean; onFarmChange: (id: string) => void; onOpenSetup: () => void; onRefresh: () => void; onSeasonChange: (id: string) => void; onZoneChange: (id: string) => void; seasons: CareSeasonOption[]; selection: CareFoundationSelection; warning: string | null; zones: CareZoneOption[] }) {
   return (
     <View style={styles.contextCard}>
-      <View style={styles.contextTop}><View><Text style={styles.contextTitle}>Ngữ cảnh chăm sóc</Text><Text style={styles.contextSubtitle}>Farm → khu canh tác → season từ API thật.</Text></View><Pressable disabled={loading} onPress={onRefresh} style={styles.refreshButton}>{loading ? <ActivityIndicator color={durianTheme.colors.moss} size="small" /> : <RefreshCw color={durianTheme.colors.moss} size={17} />}</Pressable></View>
+      <View style={styles.contextTop}><View><Text style={styles.contextTitle}>Ngữ cảnh chăm sóc</Text><Text style={styles.contextSubtitle}>Chọn trang trại, khu canh tác và mùa vụ.</Text></View><Pressable disabled={loading} onPress={onRefresh} style={styles.refreshButton}>{loading ? <ActivityIndicator color={durianTheme.colors.moss} size="small" /> : <RefreshCw color={durianTheme.colors.moss} size={17} />}</Pressable></View>
       <SelectorRow emptyText="Chưa có farm thật." label="Trang trại" onChange={onFarmChange} options={farms.map((farm) => ({ id: farm.farmId, label: farm.label }))} selectedId={selection.farmId} />
       <SelectorRow disabled={!selection.farmId} emptyText={selection.farmId ? "Farm này chưa có khu canh tác trong dữ liệu thật." : "Chọn farm trước."} label="Khu canh tác" onChange={onZoneChange} options={zones.map((zone) => ({ id: zone.zoneId, label: zone.label }))} selectedId={selection.zoneId} />
-      <SelectorRow disabled={!selection.zoneId} emptyText={selection.zoneId ? "Khu này chưa có season trong dữ liệu thật." : "Chọn khu trước."} label="Season" onChange={onSeasonChange} options={seasons.map((season) => ({ id: season.seasonId, label: season.label }))} selectedId={selection.seasonId} />
-      {canSetup ? <Pressable onPress={onOpenSetup} style={styles.fullButtonSecondary}><Text style={styles.fullButtonSecondaryText}>Thiết lập farm / khu / season</Text></Pressable> : null}
+      <SelectorRow disabled={!selection.zoneId} emptyText={selection.zoneId ? "Khu này chưa có mùa vụ." : "Chọn khu trước."} label="Mùa vụ" onChange={onSeasonChange} options={seasons.map((season) => ({ id: season.seasonId, label: season.label }))} selectedId={selection.seasonId} />
+      {canSetup && selection.zoneId ? <Pressable onPress={onOpenSetup} style={styles.fullButtonSecondary}><Text style={styles.fullButtonSecondaryText}>+ Thêm mùa vụ cho khu này</Text></Pressable> : null}
+      {canSetup && !selection.zoneId ? <Pressable onPress={onOpenSetup} style={styles.fullButtonSecondary}><Text style={styles.fullButtonSecondaryText}>Thiết lập trang trại / khu canh tác</Text></Pressable> : null}
       {warning ? <MessageCard compact kind="warning" message={warning} /> : null}
     </View>
   );
@@ -853,11 +887,11 @@ function RejectActivityModal({ draft, onChangeReason, onClose, onSubmit, submitt
   return <Modal animationType="slide" onRequestClose={onClose} transparent visible={Boolean(draft)}><View style={styles.rejectBackdrop}><View style={styles.rejectSheet}><View style={styles.sectionHeader}><View style={styles.sectionCopy}><Text style={styles.sectionTitle}>Từ chối công việc</Text><Text style={styles.sectionSubtitle}>{draft?.activity.title ?? "Công việc đang chờ duyệt"}</Text></View><Pressable disabled={submitting} onPress={onClose} style={styles.modalIconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable></View><FormInput label="Lý do từ chối" multiline onChangeText={onChangeReason} placeholder="Nhập lý do để lưu vào backend" value={draft?.reason ?? ""} /><View style={styles.modalActions}><Pressable disabled={submitting} onPress={onSubmit} style={styles.fullButtonDanger}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : null}<Text style={styles.fullButtonDangerText}>Xác nhận từ chối</Text></Pressable><Pressable disabled={submitting} onPress={onClose} style={styles.fullButtonSecondary}><Text style={styles.fullButtonSecondaryText}>Hủy</Text></Pressable></View></View></View></Modal>;
 }
 
-function FarmSetupModal({ draft, farms, onChange, onClose, onSubmit, seasons, submitting, visible, zones }: { draft: FarmSetupDraft; farms: CareFarmOption[]; onChange: (draft: FarmSetupDraft) => void; onClose: () => void; onSubmit: () => void; seasons: CareSeasonOption[]; submitting: boolean; visible: boolean; zones: CareZoneOption[] }) {
-  const step = !farms.length ? "farm" : !zones.length ? "zone" : !seasons.length ? "season" : "season";
+function FarmSetupModal({ draft, farms, onChange, onClose, onSubmit, selection, submitting, visible, zones }: { draft: FarmSetupDraft; farms: CareFarmOption[]; onChange: (draft: FarmSetupDraft) => void; onClose: () => void; onSubmit: () => void; selection: CareFoundationSelection; submitting: boolean; visible: boolean; zones: CareZoneOption[] }) {
+  const step = !farms.length ? "farm" : !zones.length ? "zone" : "season";
   const title = step === "farm" ? "Tạo trang trại" : step === "zone" ? "Tạo khu canh tác" : "Tạo mùa vụ";
-  const helper = step === "farm" ? "Tạo farm sở hữu bởi tài khoản Farmer hiện tại." : step === "zone" ? "Khu canh tác sẽ được lưu trong farm catalog thật." : "Season sẽ được lưu bằng cultivation season catalog thật.";
-  return <Modal animationType="slide" onRequestClose={onClose} visible={visible}><SafeAreaView style={styles.modalSafeArea}><View style={styles.modalHeader}><Pressable onPress={onClose} style={styles.modalIconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable><Text style={styles.modalTitle}>{title}</Text><View style={styles.modalIconButton} /></View><ScrollView contentContainerStyle={styles.modalContent}><View style={styles.formCard}><MessageCard compact kind="warning" message={helper} />{step === "farm" ? <FormInput label="Tên trang trại" onChangeText={(farmName) => onChange({ ...draft, farmName })} placeholder="Trang trại Minh Phát" value={draft.farmName} /> : null}{step === "zone" ? <FormInput label="Tên khu canh tác" onChangeText={(zoneName) => onChange({ ...draft, zoneName })} placeholder="Khu Ri6 A1" value={draft.zoneName} /> : null}{step === "season" ? <><FormInput label="Tên mùa vụ" onChangeText={(seasonName) => onChange({ ...draft, seasonName })} placeholder="Vụ mùa 2026" value={draft.seasonName} /><FormInput label="Ngày bắt đầu (YYYY-MM-DD)" onChangeText={(startDate) => onChange({ ...draft, startDate })} value={draft.startDate} /><FormInput label="Cây trồng" onChangeText={(crop) => onChange({ ...draft, crop })} value={draft.crop} /><FormInput label="Giống" onChangeText={(variety) => onChange({ ...draft, variety })} placeholder="Ri6, Dona..." value={draft.variety} /></> : null}<Pressable disabled={submitting} onPress={onSubmit} style={styles.fullButton}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Plus color={durianTheme.colors.white} size={18} />}<Text style={styles.fullButtonText}>{title}</Text></Pressable></View></ScrollView></SafeAreaView></Modal>;
+  const helper = step === "farm" ? "Tạo trang trại cho tài khoản hiện tại." : step === "zone" ? "Tạo khu canh tác trong trang trại đang chọn." : "Mùa vụ mới sẽ thuộc khu canh tác đang chọn.";
+  return <Modal animationType="slide" onRequestClose={onClose} visible={visible}><SafeAreaView style={styles.modalSafeArea}><View style={styles.modalHeader}><Pressable onPress={onClose} style={styles.modalIconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable><Text style={styles.modalTitle}>{title}</Text><View style={styles.modalIconButton} /></View><ScrollView contentContainerStyle={styles.modalContent}><View style={styles.formCard}><MessageCard compact kind="warning" message={helper} />{step === "farm" ? <FormInput label="Tên trang trại" onChangeText={(farmName) => onChange({ ...draft, farmName })} placeholder="Trang trại Minh Phát" value={draft.farmName} /> : null}{step === "zone" ? <FormInput label="Tên khu canh tác" onChangeText={(zoneName) => onChange({ ...draft, zoneName })} placeholder="Khu Ri6 A1" value={draft.zoneName} /> : null}{step === "season" ? <><InfoRow label="Trang trại" value={farms.find((farm) => farm.farmId === selection.farmId)?.label ?? selection.farmId} /><InfoRow label="Khu canh tác" value={zones.find((zone) => zone.zoneId === selection.zoneId)?.label ?? selection.zoneId} /><FormInput label="Tên mùa vụ" onChangeText={(seasonName) => onChange({ ...draft, seasonName })} placeholder="Vụ mùa 2026" value={draft.seasonName} /><FormInput label="Ngày bắt đầu (YYYY-MM-DD)" onChangeText={(startDate) => onChange({ ...draft, startDate })} value={draft.startDate} /><FormInput label="Cây trồng" onChangeText={(crop) => onChange({ ...draft, crop })} value={draft.crop} /><FormInput label="Giống" onChangeText={(variety) => onChange({ ...draft, variety })} placeholder="Ri6, Dona..." value={draft.variety} /></> : null}<Pressable disabled={submitting} onPress={onSubmit} style={styles.fullButton}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Plus color={durianTheme.colors.white} size={18} />}<Text style={styles.fullButtonText}>{title}</Text></Pressable></View></ScrollView></SafeAreaView></Modal>;
 }
 
 function ActivityFormModal({ draft, inputs, onChange, onClose, onSubmit, plans, submitting, visible }: { draft: ActivityDraft; inputs: AgriculturalInput[]; onChange: (draft: ActivityDraft) => void; onClose: () => void; onSubmit: () => void; plans: CultivationPlan[]; submitting: boolean; visible: boolean }) {
