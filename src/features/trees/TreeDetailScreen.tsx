@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -21,14 +22,37 @@ import {
   Images,
   Leaf,
   RefreshCcw,
+  Trash2,
 } from "lucide-react-native";
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
 import { durianTheme } from "@/src/theme/durianTheme";
 import { predictDurianDisease, type DiseasePrediction } from "@/src/features/scanner/diseasePredictionApi";
 import type { DiseaseCategory } from "@/src/features/scanner/diseaseCatalog";
 import { getDiseaseAlertMessage } from "@/src/features/scanner/diseaseCatalog";
-import { createCarePlan, evaluateRecovery, getTree, listCarePlans, listDiagnoses, saveDiagnosis, updateTreeHealthStatus } from "./treeApi";
-import type { CarePlanStatus, CreateCarePlanRequest, RecoveryEvaluationResponse, TreeCarePlan, TreeDetail, TreeDiagnosis } from "./treeTypes";
+import {
+  acceptCareRecommendation,
+  createCarePlan,
+  createCareRecommendation,
+  evaluateRecovery,
+  getLatestCareRecommendation,
+  getTree,
+  listCarePlanTasks,
+  listCarePlans,
+  listDiagnoses,
+  removeTree,
+  saveDiagnosis,
+  updateTreeHealthStatus,
+} from "./treeApi";
+import type {
+  CarePlanStatus,
+  CreateCarePlanRequest,
+  RecoveryEvaluationResponse,
+  TreeCarePlan,
+  TreeCareRecommendation,
+  TreeCareTask,
+  TreeDetail,
+  TreeDiagnosis,
+} from "./treeTypes";
 import { knowledgeApi } from "@/src/features/knowledge/knowledgeApi";
 import type { KnowledgeArticle } from "@/src/features/knowledge/knowledgeTypes";
 import { createTreeYieldObservation, getSeasonYieldHistory, getZoneYieldForecast, listTreeYieldObservations, updateYieldForecastSettings, type SeasonYieldHistory, type TreeYieldForecast, type TreeYieldObservation, type ZoneYieldForecast } from "./yieldForecastApi";
@@ -398,11 +422,78 @@ const RECOVERY_OUTCOME_ELIGIBLE = new Set(["RECOVERED", "IMPROVED"]);
 
 const RECOVERY_OUTCOME_LABEL: Record<string, string> = {
   RECOVERED: "Đã hồi phục",
-  IMPROVED: "Cải thiện rõ rệt",
-  STABLE: "Ổn định",
-  WORSENED: "Xấu đi",
+  IMPROVED: "Có dấu hiệu cải thiện",
+  STABLE: "Chưa có cải thiện rõ ràng",
+  WORSENED: "Có dấu hiệu xấu đi",
   UNCERTAIN: "Chưa xác định",
 };
+
+const RECOVERY_OUTCOME_COLOR: Record<string, string> = {
+  RECOVERED: "#16a34a",
+  IMPROVED: "#059669",
+  STABLE: "#ca8a04",
+  WORSENED: "#dc2626",
+  UNCERTAIN: "#6b7280",
+};
+
+const RECOVERY_OUTCOME_BG: Record<string, string> = {
+  RECOVERED: "#dcfce7",
+  IMPROVED: "#d1fae5",
+  STABLE: "#fef9c3",
+  WORSENED: "#fee2e2",
+  UNCERTAIN: "#f3f4f6",
+};
+
+const RECOVERY_NEXT_ACTION: Record<string, string> = {
+  RECOVERED: "Có thể xác nhận cây đã hồi phục. Backend vẫn kiểm tra lại điều kiện trước khi cập nhật Tree Map.",
+  IMPROVED: "Tiếp tục kế hoạch chăm sóc hiện tại và đặt lịch tái khám tiếp theo nếu cần.",
+  STABLE: "Tiếp tục điều trị/theo dõi. Chưa cho xác nhận hồi phục.",
+  WORSENED: "Đánh giá lại hướng xử lý, xem lại Knowledge Base hoặc tạo kế hoạch chăm sóc mới.",
+  UNCERTAIN: "Chụp/đưa ảnh rõ hơn hoặc kiểm tra thêm trước khi kết luận.",
+};
+
+function formatPercent(value?: number | null) {
+  return value == null ? "—" : `${Math.round(value * 100)}%`;
+}
+
+function RecoveryEvaluationCard({
+  evaluation,
+  eligible,
+}: {
+  evaluation: RecoveryEvaluationResponse;
+  eligible?: boolean;
+}) {
+  const color = RECOVERY_OUTCOME_COLOR[evaluation.outcome] ?? RECOVERY_OUTCOME_COLOR.UNCERTAIN;
+  const backgroundColor = RECOVERY_OUTCOME_BG[evaluation.outcome] ?? RECOVERY_OUTCOME_BG.UNCERTAIN;
+  return (
+    <View style={[styles.evalBox, { backgroundColor, borderColor: color }]}>
+      <View style={styles.evalHeader}>
+        <Text style={[styles.evalOutcome, { color }]}>
+          {RECOVERY_OUTCOME_LABEL[evaluation.outcome] ?? evaluation.outcome}
+        </Text>
+        {eligible === false ? (
+          <Text style={[styles.evalPill, { color }]}>Không đủ điều kiện RECOVERED</Text>
+        ) : null}
+      </View>
+      <Text style={styles.evalReason}>{evaluation.reason}</Text>
+      <View style={styles.evalCompareRow}>
+        <View style={styles.evalCompareBox}>
+          <Text style={styles.evalCompareLabel}>Lần trước</Text>
+          <Text style={styles.evalCompareValue}>{evaluation.previousDiseaseCode ?? "—"}</Text>
+          <Text style={styles.evalCompareMeta}>Confidence: {formatPercent(evaluation.previousConfidence)}</Text>
+        </View>
+        <View style={styles.evalCompareBox}>
+          <Text style={styles.evalCompareLabel}>Hiện tại</Text>
+          <Text style={styles.evalCompareValue}>{evaluation.currentDiseaseCode ?? "—"}</Text>
+          <Text style={styles.evalCompareMeta}>Confidence: {formatPercent(evaluation.currentConfidence)}</Text>
+        </View>
+      </View>
+      <Text style={styles.evalNextAction}>
+        {RECOVERY_NEXT_ACTION[evaluation.outcome] ?? RECOVERY_NEXT_ACTION.UNCERTAIN}
+      </Text>
+    </View>
+  );
+}
 
 function RecoveryPanel({ treeId, treeCode, onSaved }: RecoveryPanelProps) {
   const [expanded, setExpanded] = useState(false);
@@ -439,18 +530,11 @@ function RecoveryPanel({ treeId, treeCode, onSaved }: RecoveryPanelProps) {
     setSaving(true);
     setError(null);
     try {
-      await saveDiagnosis(treeId, {
-        imageUrl: "RECOVERY_VERIFICATION_NO_IMAGE",
-        diseaseCode: "RECOVERED_BY_FARMER",
-        diseaseName: "Phục hồi (xác nhận bởi nông dân)",
-        confidence: null,
-        boundingBox: null,
-        source: "RECOVERY_VERIFICATION",
-      });
+      await updateTreeHealthStatus(treeId, "RECOVERED");
       setSavedOk(true);
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Lưu thất bại.");
+      setError(err instanceof Error ? err.message : "Cập nhật trạng thái thất bại.");
     } finally {
       setSaving(false);
     }
@@ -492,21 +576,13 @@ function RecoveryPanel({ treeId, treeCode, onSaved }: RecoveryPanelProps) {
               <Text style={styles.loadingText}>Đang đánh giá tình trạng phục hồi...</Text>
             </View>
           ) : evaluation ? (
-            <View style={[styles.evalBox, { borderColor: eligible ? "#bbf7d0" : "#fecaca" }]}>
-              <Text style={[styles.evalOutcome, { color: eligible ? "#16a34a" : "#dc2626" }]}>
-                {RECOVERY_OUTCOME_LABEL[evaluation.outcome] ?? evaluation.outcome}
-              </Text>
-              <Text style={styles.evalReason}>{evaluation.reason}</Text>
-              {!eligible ? (
-                <Text style={styles.evalBlock}>Chưa đủ điều kiện xác nhận hồi phục</Text>
-              ) : null}
-            </View>
+            <RecoveryEvaluationCard evaluation={evaluation} eligible={eligible} />
           ) : null}
 
           {eligible ? (
             <>
               <Text style={styles.recoveryHint}>
-                Xác nhận cây đã phục hồi sau điều trị. Ghi chú bắt buộc để tạo bằng chứng.
+                Xác nhận cây đã phục hồi sau điều trị. Backend sẽ kiểm tra lại evaluateRecovery trước khi cập nhật Tree Map.
               </Text>
               <TextInput
                 style={styles.notesInput}
@@ -571,6 +647,8 @@ interface CarePlanSectionProps {
 
 function CarePlanSection({ treeId, diseaseCode, diagnosisId, onSaved }: CarePlanSectionProps) {
   const [plans, setPlans] = useState<TreeCarePlan[]>([]);
+  const [recommendation, setRecommendation] = useState<TreeCareRecommendation | null>(null);
+  const [planTasks, setPlanTasks] = useState<TreeCareTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [treatment, setTreatment] = useState("");
@@ -579,8 +657,14 @@ function CarePlanSection({ treeId, diseaseCode, diagnosisId, onSaved }: CarePlan
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    listCarePlans(treeId)
-      .then(setPlans)
+    Promise.all([
+      listCarePlans(treeId).catch(() => []),
+      getLatestCareRecommendation(treeId).catch(() => null),
+    ])
+      .then(([planData, recommendationData]) => {
+        setPlans(planData);
+        setRecommendation(recommendationData);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [treeId]);
@@ -588,6 +672,51 @@ function CarePlanSection({ treeId, diseaseCode, diagnosisId, onSaved }: CarePlan
   const activePlan = plans.find(
     (p) => p.status === "PLANNED" || p.status === "IN_PROGRESS",
   );
+
+  useEffect(() => {
+    if (!activePlan?.id) {
+      setPlanTasks([]);
+      return;
+    }
+    listCarePlanTasks(activePlan.id).then(setPlanTasks).catch(() => setPlanTasks([]));
+  }, [activePlan?.id]);
+
+  async function generateRecommendation() {
+    setSaving(true);
+    setError(null);
+    try {
+      const draft = await createCareRecommendation(treeId, { diagnosisId: diagnosisId ?? undefined });
+      setRecommendation(draft);
+      setFollowUpDate(draft.followUpDate ?? "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể tạo đề xuất AI.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function acceptRecommendation() {
+    if (!recommendation) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const plan = await acceptCareRecommendation(treeId, recommendation.id, {
+        treatment: treatment.trim() || undefined,
+        startDate: today,
+        followUpDate: followUpDate || recommendation.followUpDate || undefined,
+        tasks: recommendation.tasks,
+      });
+      setPlans((prev) => [plan, ...prev.filter((item) => item.id !== plan.id)]);
+      const refreshed = await getLatestCareRecommendation(treeId).catch(() => null);
+      setRecommendation(refreshed);
+      onSaved?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể chấp nhận đề xuất.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function create() {
     if (!diseaseCode) return;
@@ -647,6 +776,75 @@ function CarePlanSection({ treeId, diseaseCode, diagnosisId, onSaved }: CarePlan
               <Text style={styles.activePlanValue}>{activePlan.followUpDate}</Text>
             </View>
           ) : null}
+          {planTasks.map((task) => (
+            <View key={task.id} style={styles.taskRow}>
+              <Text style={styles.taskTitle}>{task.title}</Text>
+              {task.scheduledDate ? <Text style={styles.taskDate}>{task.scheduledDate}</Text> : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {!activePlan ? (
+        <View style={styles.recommendationBox}>
+          <Text style={styles.recommendationTitle}>AI đề xuất chăm sóc</Text>
+          {!recommendation ? (
+            <Pressable
+              onPress={generateRecommendation}
+              disabled={saving || !diagnosisId}
+              style={({ pressed }) => [
+                styles.primaryBtn,
+                { backgroundColor: "#047857" },
+                (pressed || saving || !diagnosisId) && { opacity: 0.7 },
+              ]}
+            >
+              <Text style={styles.primaryBtnText}>Tạo đề xuất từ AI/KB</Text>
+            </Pressable>
+          ) : (
+            <>
+              <Text style={styles.recommendationDisease}>
+                {String(recommendation.recommendationSnapshot.vietnameseName ?? recommendation.diseaseCode)}
+              </Text>
+              {typeof recommendation.recommendationSnapshot.summary === "string" ? (
+                <Text style={styles.recommendationText}>{recommendation.recommendationSnapshot.summary}</Text>
+              ) : null}
+              {Array.isArray(recommendation.recommendationSnapshot.careActions)
+                ? recommendation.recommendationSnapshot.careActions.slice(0, 4).map((item, index) => (
+                    <Text key={`${String(item)}-${index}`} style={styles.recommendationText}>• {String(item)}</Text>
+                  ))
+                : null}
+              <TextInput
+                style={[styles.notesInput, { marginTop: 8 }]}
+                placeholder="Chỉnh nội dung kế hoạch trước khi chấp nhận..."
+                placeholderTextColor="#9ca3af"
+                multiline
+                value={treatment}
+                onChangeText={setTreatment}
+              />
+              <TextInput
+                style={[styles.notesInput, { marginTop: 8 }]}
+                placeholder="Ngày tái khám (yyyy-mm-dd)..."
+                placeholderTextColor="#9ca3af"
+                value={followUpDate || recommendation.followUpDate || ""}
+                onChangeText={setFollowUpDate}
+              />
+              {recommendation.status === "DRAFT" ? (
+                <Pressable
+                  onPress={acceptRecommendation}
+                  disabled={saving}
+                  style={({ pressed }) => [
+                    styles.primaryBtn,
+                    { backgroundColor: "#047857", marginTop: 8 },
+                    (pressed || saving) && { opacity: 0.7 },
+                  ]}
+                >
+                  <Text style={styles.primaryBtnText}>Chấp nhận kế hoạch</Text>
+                </Pressable>
+              ) : (
+                <Text style={styles.recommendationAccepted}>Đã chấp nhận thành kế hoạch chăm sóc.</Text>
+              )}
+            </>
+          )}
         </View>
       ) : null}
 
@@ -755,6 +953,7 @@ interface ContentProps {
   onClose?: () => void;
   onDiagnosisSaved?: () => void;
   onYieldSaved?: () => void;
+  onRemoved?: () => void;
 }
 
 function TreeYieldPanel({ treeId, farmId, zoneId, onChanged }: { treeId: string; farmId: string; zoneId: string; onChanged?: () => void }) {
@@ -855,9 +1054,19 @@ function TreeYieldPanel({ treeId, farmId, zoneId, onChanged }: { treeId: string;
   </View>;
 }
 
-export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved, onYieldSaved }: ContentProps) {
+function treeFailureMessage(error: unknown, fallback: string) {
+  const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
+  const messages: Record<number, string> = {400:"Thông tin cây không hợp lệ. Vui lòng kiểm tra lại.",401:"Vui lòng đăng nhập lại.",403:"Bạn không có quyền thao tác trên cây này.",404:"Không tìm thấy cây. Vui lòng tải lại danh sách.",409:"Trạng thái cây đã thay đổi. Vui lòng tải lại."};
+  return status >= 500 ? "Dịch vụ cây đang gặp lỗi. Vui lòng thử lại sau." : messages[status] ?? fallback;
+}
+
+export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved, onYieldSaved, onRemoved }: ContentProps) {
   const [tree, setTree] = useState<TreeDetail | null>(null);
   const [diagnoses, setDiagnoses] = useState<TreeDiagnosis[]>([]);
+  const [progressEvaluation, setProgressEvaluation] =
+    useState<RecoveryEvaluationResponse | null>(null);
+  const [progressLoading, setProgressLoading] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -868,10 +1077,11 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved, onYieldSa
         if (!active.value) return;
         setTree(treeData);
         setDiagnoses(diagData.content ?? []);
+        setProgressEvaluation(null);
       })
       .catch((err) => {
         if (!active.value) return;
-        setError(err instanceof Error ? err.message : "Không thể tải chi tiết cây.");
+        setError(treeFailureMessage(err, "Không thể tải chi tiết cây. Vui lòng kiểm tra kết nối."));
       })
       .finally(() => {
         if (active.value) setLoading(false);
@@ -885,10 +1095,60 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved, onYieldSa
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [treeId]);
 
+  useEffect(() => {
+    if (!treeId || diagnoses.length < 2 || tree?.healthStatus === "RECOVERED") {
+      setProgressEvaluation(null);
+      return;
+    }
+    const active = { value: true };
+    setProgressLoading(true);
+    evaluateRecovery(treeId)
+      .then((result) => {
+        if (active.value) setProgressEvaluation(result);
+      })
+      .catch(() => {
+        if (active.value) setProgressEvaluation(null);
+      })
+      .finally(() => {
+        if (active.value) setProgressLoading(false);
+      });
+    return () => {
+      active.value = false;
+    };
+  }, [treeId, diagnoses.length, tree?.healthStatus]);
+
   function refresh() {
     const active = { value: true };
     load(active);
     onDiagnosisSaved?.();
+  }
+
+  function confirmRemoveTree() {
+    if (!tree) return;
+    Alert.alert(
+      "Đã đốn cây?",
+      `Cây ${tree.treeCode} sẽ được xóa khỏi bản đồ và danh sách cây đang hoạt động. Lịch sử chẩn đoán/kế hoạch chăm sóc vẫn được giữ lại.`,
+      [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: "Đã đốn cây",
+          style: "destructive",
+          onPress: async () => {
+            setRemoving(true);
+            setError(null);
+            try {
+              await removeTree(treeId);
+              onRemoved?.();
+              onClose?.();
+            } catch (err) {
+              setError(treeFailureMessage(err, "Không thể xóa cây khỏi bản đồ. Vui lòng kiểm tra kết nối."));
+            } finally {
+              setRemoving(false);
+            }
+          },
+        },
+      ],
+    );
   }
 
   const health = tree?.healthStatus;
@@ -939,6 +1199,30 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved, onYieldSa
         </View>
       ) : null}
 
+      {tree.status !== "REMOVED" ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={confirmRemoveTree}
+          disabled={removing}
+          style={({ pressed }) => [
+            styles.removeTreeBtn,
+            pressed && { opacity: 0.82 },
+            removing && { opacity: 0.55 },
+          ]}
+        >
+          {removing ? (
+            <ActivityIndicator size="small" color="#b91c1c" />
+          ) : (
+            <Trash2 size={15} color="#b91c1c" />
+          )}
+          <Text style={styles.removeTreeBtnText}>Đã đốn cây</Text>
+        </Pressable>
+      ) : (
+        <View style={styles.removedBadge}>
+          <Text style={styles.removedBadgeText}>Đã xóa khỏi bản đồ</Text>
+        </View>
+      )}
+
       {/* Start treatment button — for DISEASED or SUSPECTED trees */}
       {needsTreatment ? (
         <TreatmentPanel treeId={treeId} onSaved={refresh} />
@@ -954,13 +1238,27 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved, onYieldSa
         <CarePlanSection
           treeId={treeId}
           diseaseCode={tree.latestDiseaseCode ?? "UNKNOWN"}
-          diagnosisId={null}
+          diagnosisId={diagnoses[0]?.id ?? null}
           onSaved={refresh}
         />
       ) : null}
 
       {/* Embedded AI diagnosis panel */}
       <AIPanel treeId={treeId} treeCode={tree.treeCode} onSaved={refresh} />
+
+      {progressLoading ? (
+        <View style={styles.card}>
+          <View style={styles.loadingRow}>
+            <ActivityIndicator size="small" color={durianTheme.colors.moss} />
+            <Text style={styles.loadingText}>Đang đánh giá tiến triển...</Text>
+          </View>
+        </View>
+      ) : progressEvaluation ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Đánh giá tiến triển</Text>
+          <RecoveryEvaluationCard evaluation={progressEvaluation} />
+        </View>
+      ) : null}
 
       {/* Tree info */}
       <TreeYieldPanel treeId={tree.id} farmId={tree.farmId} zoneId={tree.farmZoneId} onChanged={onYieldSaved} />
@@ -1087,6 +1385,29 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   healthBadgeText: { fontSize: 13, fontWeight: "700" },
+  removeTreeBtn: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  removeTreeBtnText: { color: "#b91c1c", fontSize: 13, fontWeight: "800" },
+  removedBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#f3f4f6",
+    borderColor: "#e5e7eb",
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  removedBadgeText: { color: "#6b7280", fontSize: 12, fontWeight: "800" },
 
   card: {
     borderRadius: 16,
@@ -1106,6 +1427,29 @@ const styles = StyleSheet.create({
   activePlanLabel: { fontSize: 12, fontWeight: "600", color: "#6b7280", minWidth: 80 },
   activePlanStatus: { fontSize: 12, fontWeight: "700" },
   activePlanValue: { fontSize: 12, color: "#374151", flex: 1 },
+  taskRow: { backgroundColor: "#eff6ff", borderRadius: 8, padding: 8, gap: 2 },
+  taskTitle: { color: "#1f2937", fontSize: 12, fontWeight: "800" },
+  taskDate: { color: "#6b7280", fontSize: 11 },
+  recommendationBox: {
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+    marginTop: 8,
+    padding: 10,
+  },
+  recommendationTitle: { color: "#047857", fontSize: 12, fontWeight: "900", textTransform: "uppercase" },
+  recommendationDisease: { color: durianTheme.colors.ink, fontSize: 14, fontWeight: "900" },
+  recommendationText: { color: "#374151", fontSize: 12, lineHeight: 18 },
+  recommendationAccepted: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    color: "#047857",
+    fontSize: 12,
+    fontWeight: "800",
+    padding: 8,
+  },
 
   pickerRow: { flexDirection: "row", gap: 10 },
   pickerBtn: {
@@ -1181,10 +1525,37 @@ const styles = StyleSheet.create({
 
   recoveryHint: { fontSize: 12, color: durianTheme.colors.muted, lineHeight: 18 },
 
-  evalBox: { borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 8 },
-  evalOutcome: { fontSize: 13, fontWeight: "700", marginBottom: 4 },
+  evalBox: { borderWidth: 1, borderRadius: 10, gap: 8, padding: 10, marginBottom: 8 },
+  evalHeader: { alignItems: "center", flexDirection: "row", gap: 8, justifyContent: "space-between" },
+  evalOutcome: { flex: 1, fontSize: 13, fontWeight: "800" },
+  evalPill: {
+    backgroundColor: "rgba(255,255,255,0.7)",
+    borderRadius: 999,
+    fontSize: 9,
+    fontWeight: "900",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
   evalReason: { fontSize: 12, color: durianTheme.colors.muted, lineHeight: 18 },
-  evalBlock: { fontSize: 12, fontWeight: "700", color: "#dc2626", marginTop: 6 },
+  evalCompareRow: { flexDirection: "row", gap: 8 },
+  evalCompareBox: {
+    backgroundColor: "rgba(255,255,255,0.72)",
+    borderRadius: 9,
+    flex: 1,
+    padding: 8,
+  },
+  evalCompareLabel: { color: durianTheme.colors.muted, fontSize: 10, fontWeight: "800" },
+  evalCompareValue: { color: durianTheme.colors.ink, fontSize: 11, fontWeight: "900", marginTop: 3 },
+  evalCompareMeta: { color: durianTheme.colors.muted, fontSize: 10, marginTop: 2 },
+  evalNextAction: {
+    backgroundColor: "rgba(255,255,255,0.72)",
+    borderRadius: 9,
+    color: durianTheme.colors.ink,
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 17,
+    padding: 8,
+  },
   notesInput: {
     borderWidth: 1,
     borderColor: durianTheme.colors.mist,

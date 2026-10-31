@@ -25,7 +25,10 @@ import {
   listCultivationSeasons,
   getSafeHarvestDate,
 } from "@/src/features/cultivation/api/cultivationApi";
-import type { CultivationSeason } from "@/src/features/cultivation/api/cultivationTypes";
+import type {
+  CultivationSeason,
+  CultivationSeasonStatus,
+} from "@/src/features/cultivation/api/cultivationTypes";
 
 const HEALTH_COLORS: Record<string, string> = {
   HEALTHY: "#22c55e",
@@ -254,6 +257,8 @@ function ActiveSeasonBanner({
             (1000 * 60 * 60 * 24),
         )
       : null;
+  const status = season.effectiveStatus ?? season.status ?? getSeasonStatus(season, todayStr);
+  const statusLabel = seasonStatusLabels[status];
 
   return (
     <View style={styles.seasonBanner}>
@@ -270,6 +275,7 @@ function ActiveSeasonBanner({
           <Text style={styles.seasonHarvest}>
             Thu hoạch dự kiến: {endLabel}
           </Text>
+          <Text style={styles.seasonStatus}>{statusLabel}</Text>
           {safeHarvestDate !== undefined ? (
             isSafeNow ? (
               <Text style={styles.seasonSafeOk}>
@@ -297,6 +303,18 @@ function ActiveSeasonBanner({
       ) : null}
     </View>
   );
+}
+
+const seasonStatusLabels: Record<CultivationSeasonStatus, string> = {
+  PREPARING: "Đang chuẩn bị",
+  IN_PROGRESS: "Đang diễn ra",
+  ENDED: "Đã kết thúc",
+};
+
+function getSeasonStatus(season: CultivationSeason, today: string): CultivationSeasonStatus {
+  if (season.endDate && season.endDate < today) return "ENDED";
+  if (season.startDate > today) return "PREPARING";
+  return "IN_PROGRESS";
 }
 
 interface Props {
@@ -518,6 +536,13 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
                     onYieldSaved={() => {
                       if (activeSeason) getZoneYieldForecast(activeSeason.id, zoneId).then(setForecast).catch(() => {});
                     }}
+                    onRemoved={() => {
+                      setSelectedId(null);
+                      setSheetTreeId(null);
+                      listTrees(zoneId).then(setTrees).catch(() => {});
+                      getZone(zoneId).then(setZone).catch(() => {});
+                      getZoneSafety(zoneId).then((s) => { if (s) setSafety(s); }).catch(() => {});
+                    }}
                   />
                 ) : null}
               </View>
@@ -638,6 +663,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: durianTheme.colors.muted,
     marginTop: 2,
+  },
+  seasonStatus: {
+    fontSize: 11,
+    color: durianTheme.colors.moss,
+    fontWeight: "800",
+    marginTop: 3,
   },
   seasonSafeOk: {
     fontSize: 11,

@@ -53,6 +53,9 @@ export const harvestBatchStatusLabels: Record<HarvestBatchStatus, string> = {
 };
 
 export const exportReleaseStatusLabels: Record<ExportReleaseStatus, string> = {
+  INSPECTION_PENDING: "Chờ tự kiểm tra",
+  NOT_ELIGIBLE: "Chưa đủ điều kiện",
+  INSPECTED_PASSED: "Nông dân kiểm tra đạt",
   APPROVED: "Đã duyệt",
   BLOCKED: "Bị chặn",
   DRAFT: "Nháp",
@@ -100,7 +103,7 @@ export function getHarvestStatusTone(status: HarvestBatchStatus) {
 }
 
 export function getExportStatusTone(status: ExportReleaseStatus) {
-  if (status === "RELEASED" || status === "APPROVED") return "success";
+  if (status === "RELEASED" || status === "APPROVED" || status === "INSPECTED_PASSED") return "success";
   if (status === "BLOCKED" || status === "RECALLED") return "danger";
   if (status === "UNDER_REVIEW" || status === "WAITING_FOR_LAB_RESULT") return "warning";
   return "neutral";

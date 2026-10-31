@@ -130,8 +130,8 @@ export function DurianOperationsScreen() {
       listCultivationActivities(),
       loadDiagnosisHistory(1, 5),
       iotApi.listDevices(),
-      notificationClient.count(user.id),
-      notificationClient.list(user.id, { page: 0, size: 3, sortBy: "createdAt", sortDirection: "desc" }),
+      notificationClient.count(),
+      notificationClient.list({ page: 0, size: 3, sortBy: "createdAt", sortDirection: "desc" }),
       chatSupported ? chatApi.listConversations() : Promise.resolve({ conversations: [] }),
     ]);
 
