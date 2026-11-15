@@ -70,7 +70,7 @@ export function DurianKnowledgeMyArticlesScreen() {
   }, [load]);
 
   const deleteArticle = useCallback((article: KnowledgeArticle) => {
-    Alert.alert("Xóa bài viết?", "Backend sẽ xóa bài viết, không phải ẩn cục bộ trên Mobile.", [
+    Alert.alert("Xóa bài viết?", "Bài viết sẽ bị xóa vĩnh viễn.", [
       { text: "Hủy", style: "cancel" },
       {
         onPress: () => {

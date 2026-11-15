@@ -17,6 +17,7 @@ import type {
   ZoneDetail,
   ZoneSafetySummary,
   ZoneSummary,
+  TreeHealthStatus,
 } from "./treeTypes";
 
 export async function createFarm(
@@ -134,7 +135,7 @@ export async function listDiagnoses(
 
 export async function updateTreeHealthStatus(
   treeId: string,
-  healthStatus: "TREATING" | "RECOVERED",
+  healthStatus: TreeHealthStatus,
 ): Promise<TreeDetail> {
   const res = await authorizedRequest<TreeDetail>({
     method: "PATCH",

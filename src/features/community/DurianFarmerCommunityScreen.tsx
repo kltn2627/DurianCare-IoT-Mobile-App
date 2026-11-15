@@ -156,7 +156,7 @@ export function DurianFarmerCommunity() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <DurianScreenHeader eyebrow="CỘNG ĐỒNG DURIANCARE" icon={UsersRound} title="Cộng đồng" subtitle="Bảng tin, bài viết, bình luận và kết nối đều dùng API thật." />
+      <DurianScreenHeader eyebrow="CỘNG ĐỒNG DURIANCARE" icon={UsersRound} title="Cộng đồng" subtitle="Bảng tin, bài viết, bình luận và kết nối." />
       <View style={styles.tabs}>
         <TabButton active={tab === "FEED"} label="Bảng tin" onPress={() => setTab("FEED")} />
         <TabButton active={tab === "CREATE"} label="Tạo bài" onPress={() => setTab("CREATE")} />
@@ -304,7 +304,7 @@ function EmptyState({ text }: { text: string }) {
 }
 
 function confirmDelete(post: CommunityPost, onConfirm: () => void) {
-  Alert.alert("Ẩn bài viết?", "Backend sẽ chuyển trạng thái bài sang HIDDEN.", [
+  Alert.alert("Ẩn bài viết?", "Bài viết sẽ bị ẩn khỏi bảng tin.", [
     { text: "Hủy", style: "cancel" },
     { onPress: onConfirm, style: "destructive", text: "Ẩn bài" },
   ]);

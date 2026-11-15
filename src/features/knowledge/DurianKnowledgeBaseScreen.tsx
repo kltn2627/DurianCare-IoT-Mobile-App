@@ -89,7 +89,7 @@ export function DurianKnowledgeBaseScreen() {
         data={page.articles}
         keyExtractor={(item) => item.id}
         keyboardShouldPersistTaps="handled"
-        ListEmptyComponent={loading ? null : <EmptyState text={error ?? (committedQuery || category !== "Tất cả" ? "Không có bài phù hợp với bộ lọc hiện tại." : "Chưa có bài kiến thức published từ backend.")} />}
+        ListEmptyComponent={loading ? null : <EmptyState text={error ?? (committedQuery || category !== "Tất cả" ? "Không có bài phù hợp với bộ lọc hiện tại." : "Chưa có bài kiến thức.")} />}
         ListFooterComponent={loadingMore ? <ActivityIndicator color={durianTheme.colors.moss} style={styles.footerLoader} /> : null}
         ListHeaderComponent={
           <View style={styles.header}>
@@ -103,7 +103,6 @@ export function DurianKnowledgeBaseScreen() {
               </View>
               <Text style={styles.eyebrow}>KHÔNG GIAN TRI THỨC</Text>
               <Text style={styles.title}>Cẩm nang vườn sầu riêng</Text>
-              <Text style={styles.subtitle}>Bài viết published từ backend Knowledge, đồng bộ với Web.</Text>
             </View>
             <View style={styles.searchBox}>
               <Search color={durianTheme.colors.moss} size={20} />

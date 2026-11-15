@@ -2,6 +2,7 @@ import { useCameraPermissions } from "expo-camera";
 import { CodeScannerCamera } from "./CodeScannerCamera";
 import {
   AlertCircle,
+  ArrowLeft,
   CheckCircle2,
   Droplets,
   ExternalLink,
@@ -14,6 +15,7 @@ import {
   ThermometerSun,
   X,
 } from "lucide-react-native";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -29,6 +31,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { durianTheme } from "@/src/theme/durianTheme";
 import { fetchPublicTrace, type PublicTraceData } from "@/src/lib/iotApi";
+import { parseTreeQr } from "./treeQr";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -171,11 +174,40 @@ export function QrScanScreen() {
   const [error,      setError]      = useState<string | null>(null);
   const [traceData,  setTraceData]  = useState<PublicTraceData | null>(null);
   const processingRef = useRef(false);
+  const router = useRouter();
+
+  const reset = useCallback(() => {
+    setTraceData(null);
+    setError(null);
+    setLoading(false);
+    setScanning(true);
+    processingRef.current = false;
+  }, []);
+
+  // Coming back from a tree detail re-arms the scanner (single scan per visit).
+  useFocusEffect(useCallback(() => {
+    if (!processingRef.current) return;
+    reset();
+  }, [reset]));
 
   const handleBarcode = useCallback(async (data: string) => {
     if (processingRef.current || !scanning) return;
+
+    const treeId = parseTreeQr(data);
+    if (treeId) {
+      processingRef.current = true;
+      setScanning(false);
+      router.push({ pathname: "/(main)/trees/[treeId]", params: { treeId } });
+      return;
+    }
+
     const code = extractCode(data);
-    if (!code) return;
+    if (!code) {
+      // Stop the camera so the same unknown code is not reported repeatedly; "Quét lại" re-arms it.
+      setScanning(false);
+      setError("Mã QR không hợp lệ.");
+      return;
+    }
 
     processingRef.current = true;
     setScanning(false);
@@ -191,13 +223,11 @@ export function QrScanScreen() {
       setLoading(false);
       processingRef.current = false;
     }
-  }, [scanning]);
+  }, [router, scanning]);
 
-  function reset() {
-    setTraceData(null);
-    setError(null);
-    setScanning(true);
-    processingRef.current = false;
+  function goBack() {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(main)/farms");
   }
 
   if (!permission) {
@@ -216,7 +246,6 @@ export function QrScanScreen() {
         <View style={styles.centered}>
           <QrCode color={durianTheme.colors.mist} size={48} />
           <Text style={styles.permTitle}>Cần quyền truy cập camera</Text>
-          <Text style={styles.permSub}>DurianCare cần camera để quét mã QR trên tem dán thùng sầu riêng.</Text>
           {permission.canAskAgain && (
             <Pressable
               onPress={requestPermission}
@@ -225,6 +254,17 @@ export function QrScanScreen() {
               <Text style={styles.permBtnText}>Cấp quyền camera</Text>
             </Pressable>
           )}
+          {!permission.canAskAgain && (
+            <Pressable
+              onPress={() => void Linking.openSettings()}
+              style={({ pressed }) => [styles.permBtn, pressed && styles.pressed]}
+            >
+              <Text style={styles.permBtnText}>Mở cài đặt để cấp quyền</Text>
+            </Pressable>
+          )}
+          <Pressable onPress={goBack} style={({ pressed }) => [styles.backInline, pressed && styles.pressed]}>
+            <Text style={styles.backInlineText}>Quay lại</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
     );
@@ -262,7 +302,7 @@ export function QrScanScreen() {
         {!loading && (
           <View pointerEvents="none" style={styles.hint}>
             <QrCode color={durianTheme.colors.mossDark} size={14} />
-            <Text style={styles.hintText}>Đưa mã QR trên tem vào giữa khung</Text>
+            <Text style={styles.hintText}>Đưa mã QR của cây hoặc tem vào giữa khung</Text>
           </View>
         )}
 
@@ -293,9 +333,17 @@ export function QrScanScreen() {
       {/* Header overlay */}
       <View pointerEvents="none" style={styles.headerOverlay}>
         <Text style={styles.headerEyebrow}>DURIANCARE</Text>
-        <Text style={styles.headerTitle}>Quét QR truy xuất nguồn gốc</Text>
-        <Text style={styles.headerSub}>Hướng camera vào mã QR trên tem dán thùng sầu riêng</Text>
+        <Text style={styles.headerTitle}>Quét QR cây / truy xuất</Text>
       </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Quay lại"
+        onPress={goBack}
+        style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
+      >
+        <ArrowLeft color={durianTheme.colors.white} size={20} />
+      </Pressable>
     </SafeAreaView>
   );
 }
@@ -303,6 +351,19 @@ export function QrScanScreen() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  backBtn: {
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.45)",
+    borderRadius: 20,
+    height: 40,
+    justifyContent: "center",
+    left: 14,
+    position: "absolute",
+    top: 14,
+    width: 40,
+  },
+  backInline:     { marginTop: 12, paddingHorizontal: 16, paddingVertical: 10 },
+  backInlineText: { color: durianTheme.colors.white, fontSize: 14, fontWeight: "700" },
   safeArea:     { backgroundColor: durianTheme.colors.mossDark, flex: 1 },
 
   // Camera
@@ -367,7 +428,7 @@ const styles = StyleSheet.create({
   retryBtn:     { alignItems: "center", backgroundColor: durianTheme.colors.moss, borderRadius: 14, flexDirection: "row", gap: 7, paddingHorizontal: 18, paddingVertical: 11 },
   retryText:    { color: "#fff", fontSize: 13, fontWeight: "900" },
   headerOverlay: {
-    left: 18,
+    left: 66,
     paddingTop: 8,
     position: "absolute",
     right: 18,

@@ -177,7 +177,7 @@ export function DurianDiagnosisResultScreen() {
   const displaySummary =
     entry?.recommendation?.diseaseSummary ??
     detail?.summary ??
-    "Backend chưa trả phần mô tả cho kết quả này.";
+    "Chưa có mô tả cho kết quả này.";
 
   function shareToEngineer() {
     if (!entry) return;
@@ -260,7 +260,7 @@ export function DurianDiagnosisResultScreen() {
           ) : (
             <View style={[styles.heroImage, styles.noImage]}>
               <Leaf color={durianTheme.colors.moss} size={32} />
-              <Text style={styles.noImageText}>Backend chưa trả ảnh chẩn đoán.</Text>
+              <Text style={styles.noImageText}>Không có ảnh chẩn đoán.</Text>
             </View>
           )}
           <View style={styles.heroCopy}>
@@ -287,9 +287,6 @@ export function DurianDiagnosisResultScreen() {
             </View>
             <View style={styles.referenceCopy}>
               <Text style={styles.referenceTitle}>Tóm tắt từ hệ thống</Text>
-              <Text style={styles.referenceSubtitle}>
-                Ưu tiên recommendation và decision support thật từ backend AI; catalog cục bộ chỉ dùng khi backend không trả phần này.
-              </Text>
             </View>
           </View>
 

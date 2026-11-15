@@ -49,6 +49,8 @@ import type {
 import { durianTheme } from "@/src/theme/durianTheme";
 
 import { iotApi } from "./iotApi";
+import { iotLifecycleApi, lifecycleMessage } from "./lifecycleApi";
+import { IotDeviceSettingsCard } from "./IotDeviceSettingsCard";
 import type { IotAlert, IotDevice, IotTelemetryReading, MutableIotDeviceStatus } from "./types";
 
 const HISTORY_LIMIT = 288;
@@ -102,6 +104,7 @@ export function DurianClimateMonitorScreen() {
   const [history, setHistory] = useState<IotTelemetryReading[]>([]);
   const [foundation, setFoundation] = useState<FoundationData>({ activities: [], authorizedFarms: [], ownedFarms: [], plans: [] });
   const [registerDraft, setRegisterDraft] = useState({
+    claimCode: "",
     cultivationAreaId: "",
     deviceUid: "",
     farmId: "",
@@ -249,24 +252,30 @@ export function DurianClimateMonitorScreen() {
 
   async function submitRegisterDevice() {
     const farmId = selectedRegisterFarmId;
-    if (!registerDraft.deviceUid.trim() || !farmId) {
-      setError("Cần nhập UID thiết bị và chọn farm trước khi đăng ký.");
+    if (submitting) return;
+    if (!/^[A-Za-z0-9._:-]{3,150}$/.test(registerDraft.deviceUid.trim()) || !farmId) {
+      setError("Nhập mã thiết bị hợp lệ và chọn trang trại.");
+      return;
+    }
+    if (!/^[0-9A-Za-z]{5}-?[0-9A-Za-z]{5}$/.test(registerDraft.claimCode.trim())) {
+      setError("Mã kích hoạt gồm 10 ký tự, ví dụ ABCDE-12345.");
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
-      const response = await iotApi.registerDevice({
+      const response = await iotLifecycleApi.claimDevice({
+        claimCode: registerDraft.claimCode.trim(),
         cultivationAreaId: registerDraft.cultivationAreaId || null,
         deviceUid: registerDraft.deviceUid.trim(),
         farmId,
         name: registerDraft.name.trim() || null,
       });
-      setRegisterDraft({ cultivationAreaId: "", deviceUid: "", farmId, name: "" });
+      setRegisterDraft({ claimCode: "", cultivationAreaId: "", deviceUid: "", farmId, name: "" });
       await loadDevices();
       setSelectedDeviceId(response.device.id);
     } catch (registerError) {
-      setError(messageFromError(registerError));
+      setError(lifecycleMessage(registerError, "Không thể kích hoạt thiết bị. Vui lòng thử lại."));
     } finally {
       setSubmitting(false);
     }
@@ -338,10 +347,10 @@ export function DurianClimateMonitorScreen() {
       >
         <View style={styles.headerBlock}>
           <DurianScreenHeader
-            eyebrow="SMARTFARM IOT · REAL API"
+            eyebrow="GIÁM SÁT VƯỜN"
             icon={Activity}
             title="Giám sát cảm biến IoT"
-            subtitle="Đọc danh sách thiết bị, latest telemetry và lịch sử raw qua gateway."
+            subtitle="Thiết bị và số liệu môi trường của vườn."
           />
           <View style={styles.toolbar}>
             <View style={styles.toolbarCopy}>
@@ -351,7 +360,7 @@ export function DurianClimateMonitorScreen() {
                   {selectedDevice ? selectedDevice.name : "Chưa có thiết bị"}
                 </Text>
                 <Text style={styles.liveMeta}>
-                  {latest?.receivedAt ? `Cập nhật ${formatDateTime(latest.receivedAt)}` : "Chưa có telemetry"}
+                  {latest?.receivedAt ? `Cập nhật ${formatDateTime(latest.receivedAt)}` : "Chưa có dữ liệu"}
                 </Text>
               </View>
             </View>
@@ -385,7 +394,7 @@ export function DurianClimateMonitorScreen() {
           />
         ) : (
           <EmptyCard
-            body="Không có device registry nào nằm trong farm/khu bạn được quyền xem. Telemetry raw vẫn có thể tồn tại, nhưng không được expose nếu thiếu mapping farm/area."
+            body="Chưa có thiết bị cảm biến nào được gắn với vườn của bạn."
             title="Chưa có thiết bị khả dụng"
           />
         )}
@@ -420,7 +429,6 @@ export function DurianClimateMonitorScreen() {
 
         <View style={styles.chartCard}>
           <SectionHeading
-            caption="Nguồn dữ liệu raw từ /api/iot/devices/{id}/telemetry"
             title="Lịch sử nhiệt độ & độ ẩm"
           />
           {history.length > 1 ? (
@@ -433,17 +441,19 @@ export function DurianClimateMonitorScreen() {
             </>
           ) : (
             <Text style={styles.emptyText}>
-              Chưa đủ dữ liệu lịch sử để vẽ chart. Mobile không dùng sample chart.
+              Chưa đủ dữ liệu để vẽ biểu đồ.
             </Text>
           )}
         </View>
 
         {selectedDevice ? (
           <View style={styles.chartCard}>
-            <SectionHeading caption="Registry + latest reading" title="Trạng thái thiết bị" />
+            <SectionHeading title="Trạng thái thiết bị" />
             <DeviceDetail device={selectedDevice} latest={latest} />
           </View>
         ) : null}
+
+        {selectedDevice ? <IotDeviceSettingsCard key={selectedDevice.id} deviceId={selectedDevice.id} /> : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -528,11 +538,11 @@ function DeviceManagementCard({
   editZones: CareZoneOption[];
   farms: CareFarmOption[];
   onChangeEdit: (draft: { cultivationAreaId: string; farmId: string; name: string; status: MutableIotDeviceStatus }) => void;
-  onChangeRegister: (draft: { cultivationAreaId: string; deviceUid: string; farmId: string; name: string }) => void;
+  onChangeRegister: (draft: { claimCode: string; cultivationAreaId: string; deviceUid: string; farmId: string; name: string }) => void;
   onDelete: () => void;
   onRegister: () => void;
   onUpdate: () => void;
-  registerDraft: { cultivationAreaId: string; deviceUid: string; farmId: string; name: string };
+  registerDraft: { claimCode: string; cultivationAreaId: string; deviceUid: string; farmId: string; name: string };
   registerFarmId: string;
   registerZones: CareZoneOption[];
   selectedDevice: IotDevice | null;
@@ -540,23 +550,28 @@ function DeviceManagementCard({
 }) {
   return (
     <View style={styles.chartCard}>
-      <SectionHeading
-        caption="Quản lý registry thật, yêu cầu quyền CONFIGURE_DEVICE từ Farm service."
-        title="Đăng ký & gán thiết bị"
-      />
+      <SectionHeading title="Thêm & gắn thiết bị" />
       {farms.length === 0 ? (
-        <Text style={styles.emptyText}>
-          Chưa có farm catalog khả dụng. Không thể đăng ký thiết bị nếu thiếu farmId thật.
-        </Text>
+        <Text style={styles.emptyText}>Chưa có trang trại để gắn thiết bị.</Text>
       ) : (
         <>
           <TextInput
             autoCapitalize="none"
             onChangeText={(deviceUid) => onChangeRegister({ ...registerDraft, deviceUid })}
-            placeholder="UID thiết bị, ví dụ esp32:north-01"
+            placeholder="Mã thiết bị, ví dụ esp32-01"
             placeholderTextColor={durianTheme.colors.muted}
             style={styles.input}
             value={registerDraft.deviceUid}
+          />
+          <TextInput
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={11}
+            onChangeText={(claimCode) => onChangeRegister({ ...registerDraft, claimCode: claimCode.toUpperCase() })}
+            placeholder="Mã kích hoạt, ví dụ ABCDE-12345"
+            placeholderTextColor={durianTheme.colors.muted}
+            style={styles.input}
+            value={registerDraft.claimCode}
           />
           <TextInput
             onChangeText={(name) => onChangeRegister({ ...registerDraft, name })}
@@ -578,7 +593,7 @@ function DeviceManagementCard({
           />
           <Pressable disabled={submitting} onPress={onRegister} style={styles.primaryButton}>
             <Settings color={durianTheme.colors.white} size={17} />
-            <Text style={styles.primaryButtonText}>Đăng ký thiết bị</Text>
+            <Text style={styles.primaryButtonText}>Kích hoạt thiết bị</Text>
           </Pressable>
         </>
       )}
@@ -606,7 +621,7 @@ function DeviceManagementCard({
             onSelect={(cultivationAreaId) => onChangeEdit({ ...editDraft, cultivationAreaId })}
           />
           <OptionRow
-            options={DEVICE_STATUSES.map((status) => ({ id: status, label: status }))}
+            options={DEVICE_STATUSES.map((status) => ({ id: status, label: STATUS_LABELS[status] ?? status }))}
             selectedId={editDraft.status}
             onSelect={(status) => onChangeEdit({ ...editDraft, status: status as MutableIotDeviceStatus })}
           />
@@ -617,7 +632,7 @@ function DeviceManagementCard({
             </Pressable>
             <Pressable disabled={submitting} onPress={onDelete} style={styles.dangerButton}>
               <Trash2 color={durianTheme.colors.danger} size={16} />
-              <Text style={styles.dangerButtonText}>Xóa registry</Text>
+              <Text style={styles.dangerButtonText}>Xóa thiết bị</Text>
             </Pressable>
           </View>
         </View>
@@ -758,11 +773,11 @@ function EmptyCard({ body, title }: { body: string; title: string }) {
   );
 }
 
-function SectionHeading({ caption, title }: { caption: string; title: string }) {
+function SectionHeading({ caption, title }: { caption?: string; title: string }) {
   return (
     <View style={styles.sectionHeading}>
       <Text style={styles.sectionTitle}>{title}</Text>
-      <Text style={styles.sectionCaption}>{caption}</Text>
+      {caption ? <Text style={styles.sectionCaption}>{caption}</Text> : null}
     </View>
   );
 }
@@ -839,6 +854,8 @@ function formatDateTime(value: string) {
     year: "numeric",
   }).format(date);
 }
+
+const STATUS_LABELS: Record<string, string> = { ACTIVE: "Hoạt động", INACTIVE: "Tạm ngưng", MAINTENANCE: "Bảo trì" };
 
 function messageFromError(error: unknown) {
   return error instanceof Error ? error.message : "Không thể tải dữ liệu IoT.";

@@ -56,3 +56,7 @@ Thumbs.db
 .claude/
 AGENTS.md
 CLAUDE.md
+
+# Local Expo web export snapshots
+dist-phase-*/
+dist-farmer-export/

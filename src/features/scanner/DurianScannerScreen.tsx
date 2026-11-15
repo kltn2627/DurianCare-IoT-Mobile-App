@@ -291,8 +291,8 @@ export function DurianScannerScreen() {
             <Text style={styles.resultNote}>{prediction.disease.note}</Text>
             <Text style={styles.inferenceTime}>
               {prediction.historyId
-                ? `Đã lưu backend: ${prediction.historyId}`
-                : "Backend sẽ lưu lịch sử khi nhận được định danh người dùng."}
+                ? "Đã lưu vào lịch sử chẩn đoán."
+                : "Đăng nhập để lưu lịch sử chẩn đoán."}
             </Text>
 
             <Pressable

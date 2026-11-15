@@ -105,7 +105,7 @@ export function DurianKnowledgeEditorScreen({ mode }: { mode: EditorMode }) {
       if (form.coverUpload) {
         saved = await knowledgeApi.uploadCover(saved.id, form.coverUpload);
       }
-      Alert.alert("Đã lưu", status === "DRAFT" ? "Bản nháp đã được lưu." : "Bài đã được gửi theo workflow backend.");
+      Alert.alert("Đã lưu", status === "DRAFT" ? "Bản nháp đã được lưu." : "Bài đã được gửi duyệt.");
       navigation.replace("/(main)/knowledge/my-articles");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Không lưu được bài viết.");
@@ -135,7 +135,7 @@ export function DurianKnowledgeEditorScreen({ mode }: { mode: EditorMode }) {
             {categories.map((item) => <Pressable key={item.value} onPress={() => update("category", item.value)} style={[styles.categoryButton, form.category === item.value && styles.categoryButtonActive]}><Text style={[styles.categoryText, form.category === item.value && styles.categoryTextActive]}>{item.label}</Text></Pressable>)}
           </ScrollView>
         </Field>
-        <Field label="Tóm tắt"><TextInput multiline onChangeText={(value) => update("excerpt", value)} placeholder="Tối đa 600 ký tự theo backend" style={[styles.input, styles.textAreaSmall]} value={form.excerpt} /></Field>
+        <Field label="Tóm tắt"><TextInput multiline onChangeText={(value) => update("excerpt", value)} placeholder="Tối đa 600 ký tự" style={[styles.input, styles.textAreaSmall]} value={form.excerpt} /></Field>
         <Field label="Nội dung"><TextInput multiline onChangeText={(value) => update("content", value)} placeholder="Có thể nhập plain text hoặc HTML đơn giản giống Web." style={[styles.input, styles.textArea]} value={form.content} /></Field>
         <Field label="Tags"><TextInput onChangeText={(value) => update("tags", value)} placeholder="Ví dụ: cháy lá, phòng trị, mùa mưa" style={styles.input} value={form.tags} /></Field>
         <Field label="Ảnh bìa">

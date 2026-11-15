@@ -1,5 +1,5 @@
 export type TreeHealthStatus = "HEALTHY" | "DISEASED" | "TREATING" | "SUSPECTED" | "RECOVERED";
-export type TreeStatus = "ACTIVE" | "REMOVED" | "REPLANTED";
+export type TreeStatus = "ACTIVE" | "REMOVED" | "DEAD";
 
 export interface FarmSummary {
   id: string;

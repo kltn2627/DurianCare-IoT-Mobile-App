@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
-  Dimensions,
   Modal,
   Pressable,
   ScrollView,
@@ -11,11 +10,10 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Circle, Line, Text as SvgText } from "react-native-svg";
 
 import { Calendar as CalendarIcon } from "lucide-react-native";
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
-import { TreePine as TreePineIcon } from "lucide-react-native";
+import { ChevronRight, QrCode, TreePine as TreePineIcon } from "lucide-react-native";
 import { durianTheme } from "@/src/theme/durianTheme";
 import { getZone, listTrees, getZoneSafety } from "./treeApi";
 import type { TreeSummary, ZoneDetail, ZoneSafetySummary } from "./treeTypes";
@@ -57,93 +55,6 @@ const HEALTH_BG: Record<string, string> = {
 function treeColor(tree: TreeSummary): string {
   if (!tree.healthStatus) return "#9ca3af";
   return HEALTH_COLORS[tree.healthStatus] ?? "#9ca3af";
-}
-
-function TreeMapSvg({
-  trees,
-  selectedId,
-  onSelect,
-}: {
-  trees: TreeSummary[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-}) {
-  const screenWidth = Dimensions.get("window").width - 32;
-  const mapHeight = screenWidth * 0.65;
-  const positionedTrees = trees.filter(
-    (t) => t.positionX != null && t.positionY != null,
-  );
-
-  return (
-    <View style={[styles.mapContainer, { height: mapHeight }]}>
-      <Svg width={screenWidth} height={mapHeight}>
-        {/* Grid lines */}
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Line
-            key={`vg-${i}`}
-            x1={(i + 1) * (screenWidth / 6)}
-            y1={0}
-            x2={(i + 1) * (screenWidth / 6)}
-            y2={mapHeight}
-            stroke="#d1fae5"
-            strokeWidth={1}
-          />
-        ))}
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Line
-            key={`hg-${i}`}
-            x1={0}
-            y1={(i + 1) * (mapHeight / 4)}
-            x2={screenWidth}
-            y2={(i + 1) * (mapHeight / 4)}
-            stroke="#d1fae5"
-            strokeWidth={1}
-          />
-        ))}
-
-        {positionedTrees.map((tree) => {
-          const cx = (tree.positionX ?? 0) * screenWidth;
-          const cy = (tree.positionY ?? 0) * mapHeight;
-          const color = treeColor(tree);
-          const isSelected = tree.id === selectedId;
-          return (
-            <React.Fragment key={tree.id}>
-              {isSelected ? (
-                <Circle cx={cx} cy={cy} r={18} fill={color} opacity={0.2} />
-              ) : null}
-              <Circle
-                cx={cx}
-                cy={cy}
-                r={isSelected ? 12 : 9}
-                fill={color}
-                stroke={isSelected ? "#1e293b" : "white"}
-                strokeWidth={isSelected ? 2.5 : 1.5}
-                onPress={() => onSelect(tree.id)}
-              />
-              <SvgText
-                x={cx}
-                y={cy + 20}
-                textAnchor="middle"
-                fontSize={8}
-                fill="#374151"
-                fontWeight={isSelected ? "700" : "500"}
-              >
-                {tree.treeCode}
-              </SvgText>
-            </React.Fragment>
-          );
-        })}
-      </Svg>
-
-      {positionedTrees.length === 0 ? (
-        <View style={styles.mapEmpty}>
-          <Text style={styles.mapEmptyText}>
-            Chưa có cây nào có vị trí trên bản đồ
-          </Text>
-        </View>
-      ) : null}
-    </View>
-  );
 }
 
 function SafetySummaryCard({ summary }: { summary: ZoneSafetySummary }) {
@@ -334,7 +245,6 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
     string | null | undefined
   >(undefined);
   const [forecast, setForecast] = useState<ZoneYieldForecast | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sheetTreeId, setSheetTreeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -396,10 +306,6 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
     return load();
   }, [load]);
 
-  const selectedTree = selectedId
-    ? trees.find((t) => t.id === selectedId)
-    : null;
-
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       <DurianScreenHeader
@@ -429,7 +335,7 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
           {forecast ? <View style={styles.forecastCard}><Text style={styles.forecastEyebrow}>DỰ KIẾN SẢN LƯỢNG</Text><Text style={styles.forecastValue}>{forecast.forecastableTrees ? `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(forecast.estimatedYieldKg)} kg` : "Chưa đủ dữ liệu"}</Text><Text style={styles.forecastMeta}>Đã ghi nhận {forecast.observedTrees}/{forecast.totalTrees} cây</Text>{forecast.estimatedRevenue == null ? <Text style={styles.forecastMeta}>Nhập giá dự kiến/kg để xem doanh thu dự kiến.</Text> : <Text style={styles.forecastMeta}>Doanh thu dự kiến: {new Intl.NumberFormat("vi-VN", { style: "currency", currency: forecast.currencyCode ?? "VND", maximumFractionDigits: 0 }).format(forecast.estimatedRevenue)}</Text>}</View> : null}
           {safety ? <SafetySummaryCard summary={safety} /> : null}
 
-          {/* Tree Map Legend */}
+          {/* Health status legend for the tree list */}
           <View style={styles.legendRow}>
             {Object.entries(HEALTH_LABELS).map(([key, label]) => (
               <View key={key} style={styles.legendItem}>
@@ -450,61 +356,21 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
             </View>
           </View>
 
-          {/* Tree map canvas */}
-          <TreeMapSvg
-            trees={trees}
-            selectedId={selectedId}
-            onSelect={(id) => setSelectedId(id === selectedId ? null : id)}
-          />
-
-          {/* Selected tree quick info — tap to open inline sheet */}
-          {selectedTree ? (
-            <Pressable
-              style={styles.selectedTreeCard}
-              onPress={() => setSheetTreeId(selectedTree.id)}
-            >
-              <View style={styles.selectedTreeHeader}>
-                <View>
-                  <Text style={styles.selectedTreeCode}>
-                    {selectedTree.treeCode}
-                  </Text>
-                  {selectedTree.nickname ? (
-                    <Text style={styles.selectedTreeNickname}>
-                      {selectedTree.nickname}
-                    </Text>
-                  ) : null}
-                </View>
-                {selectedTree.healthStatus ? (
-                  <View
-                    style={[
-                      styles.healthBadge,
-                      {
-                        backgroundColor:
-                          HEALTH_BG[selectedTree.healthStatus] ?? "#f3f4f6",
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.healthBadgeText,
-                        {
-                          color:
-                            HEALTH_COLORS[selectedTree.healthStatus] ??
-                            "#374151",
-                        },
-                      ]}
-                    >
-                      {HEALTH_LABELS[selectedTree.healthStatus] ??
-                        selectedTree.healthStatus}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-              <Text style={styles.viewDetail}>
-                Nhấn để xem chi tiết & chẩn đoán AI →
-              </Text>
-            </Pressable>
-          ) : null}
+          {/* Tree QR entry (replaces the on-device tree map) */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Quét QR cây"
+            style={({ pressed }) => [styles.qrCta, pressed && { opacity: 0.85 }]}
+            onPress={() => router.push("/(main)/qr-scan")}
+          >
+            <View style={styles.qrCtaIcon}>
+              <QrCode color={durianTheme.colors.white} size={22} />
+            </View>
+            <View style={styles.qrCtaCopy}>
+              <Text style={styles.qrCtaTitle}>Quét QR cây</Text>
+            </View>
+            <ChevronRight color={durianTheme.colors.moss} size={18} />
+          </Pressable>
 
           {/* Inline Tree Detail bottom sheet */}
           <Modal
@@ -537,7 +403,6 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
                       if (activeSeason) getZoneYieldForecast(activeSeason.id, zoneId).then(setForecast).catch(() => {});
                     }}
                     onRemoved={() => {
-                      setSelectedId(null);
                       setSheetTreeId(null);
                       listTrees(zoneId).then(setTrees).catch(() => {});
                       getZone(zoneId).then(setZone).catch(() => {});
@@ -562,14 +427,8 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
               trees.map((tree) => (
                 <Pressable
                   key={tree.id}
-                  style={[
-                    styles.treeRow,
-                    tree.id === selectedId && styles.treeRowSelected,
-                  ]}
-                  onPress={() => {
-                    setSelectedId(tree.id === selectedId ? null : tree.id);
-                  }}
-                  onLongPress={() => setSheetTreeId(tree.id)}
+                  style={styles.treeRow}
+                  onPress={() => setSheetTreeId(tree.id)}
                 >
                   <View style={styles.treeRowLeft}>
                     <View
@@ -616,6 +475,27 @@ export function ZoneTreesScreen({ farmId, zoneId }: Props) {
 }
 
 const styles = StyleSheet.create({
+  qrCta: {
+    alignItems: "center",
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    padding: 14,
+  },
+  qrCtaIcon: {
+    alignItems: "center",
+    backgroundColor: durianTheme.colors.moss,
+    borderRadius: 12,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  qrCtaCopy: { flex: 1, gap: 2 },
+  qrCtaTitle: { fontSize: 15, fontWeight: "800", color: durianTheme.colors.mossDark },
+  qrCtaSub: { fontSize: 12, color: durianTheme.colors.muted },
   container: { flex: 1, backgroundColor: durianTheme.colors.canvas },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   scrollContent: { padding: 16, gap: 12 },

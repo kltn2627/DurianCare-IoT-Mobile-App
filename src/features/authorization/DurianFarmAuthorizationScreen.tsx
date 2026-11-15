@@ -54,7 +54,7 @@ function toggleValue<T extends string>(values: T[], value: T) {
 }
 
 function areaText(ids: string[]) {
-  if (!ids.length) return "Toàn bộ khu hiện có theo backend";
+  if (!ids.length) return "Toàn bộ khu";
   return ids.map((id) => `Plot ${shortFoundationId(id)}`).join(", ");
 }
 
@@ -193,7 +193,7 @@ export function DurianFarmAuthorizationScreen() {
         initialPermissions: selectedPermissions,
         message: message.trim() || null,
       });
-      setNotice("Đã gửi lời mời cộng tác bằng API thật.");
+      setNotice("Đã gửi lời mời cộng tác.");
       setMessage("");
       setExpiresAt("");
       setSelectedAreas([]);
@@ -224,7 +224,7 @@ export function DurianFarmAuthorizationScreen() {
     setError("");
     try {
       await farmAuthorizationApi.acceptInvitation(invitationId);
-      setNotice("Đã chấp nhận lời mời. Danh sách farm được cấp quyền đã tải lại.");
+      setNotice("Đã chấp nhận lời mời.");
       await loadEngineerData();
       await loadFoundation();
     } catch (caught) {
@@ -274,7 +274,7 @@ export function DurianFarmAuthorizationScreen() {
     setError("");
     try {
       await farmAuthorizationApi.revokeAuthorization(authorizationId);
-      setNotice("Đã thu hồi quyền truy cập. Dữ liệu quyền/farm đã tải lại.");
+      setNotice("Đã thu hồi quyền truy cập.");
       await loadOwnerFarmData(farmId);
       await loadFoundation();
     } catch (caught) {
@@ -301,8 +301,8 @@ export function DurianFarmAuthorizationScreen() {
   if (mode === "UNSUPPORTED") {
     return (
       <SafeAreaView style={styles.safeArea} edges={["top"]}>
-        <DurianScreenHeader eyebrow="QUYỀN TRUY CẬP VƯỜN" icon={ShieldCheck} title="Chưa hỗ trợ vai trò này" subtitle="Farm authorization hiện chỉ có contract cho Farmer và Engineer/Expert." />
-        <View style={styles.content}><MessageCard kind="warning" message="Backend chưa xác nhận Admin có quyền quản trị farm authorization toàn hệ thống, nên Mobile không tự mở màn hình admin ở phase này." /></View>
+        <DurianScreenHeader eyebrow="QUYỀN TRUY CẬP VƯỜN" icon={ShieldCheck} title="Chưa hỗ trợ vai trò này" subtitle="Chức năng này dành cho nông dân và kỹ sư." />
+        <View style={styles.content}><MessageCard kind="warning" message="Tài khoản quản trị chưa dùng được chức năng này trên ứng dụng." /></View>
       </SafeAreaView>
     );
   }
@@ -356,21 +356,21 @@ export function DurianFarmAuthorizationScreen() {
 function FarmerFlow({ agronomists, authorizations, expiresAt, farmId, farmInvitations, farms, message, onAreaToggle, onCancelInvitation, onCreateInvitation, onEditAuthorization, onExpiresAtChange, onFarmChange, onMessageChange, onPermissionToggle, onQueryChange, onRevokeAuthorization, onSearch, query, selectedAgronomistId, selectedAreas, selectedPermissions, setSelectedAgronomistId, submitting, zones }: { agronomists: AgronomistSummary[]; authorizations: FarmAuthorization[]; expiresAt: string; farmId: string; farmInvitations: AgronomistInvitation[]; farms: CareFarmOption[]; message: string; onAreaToggle: (areaId: string) => void; onCancelInvitation: (invitationId: string) => void; onCreateInvitation: () => void; onEditAuthorization: (authorization: FarmAuthorization) => void; onExpiresAtChange: (value: string) => void; onFarmChange: (farmId: string) => void; onMessageChange: (value: string) => void; onPermissionToggle: (permission: FarmPermissionType) => void; onQueryChange: (value: string) => void; onRevokeAuthorization: (authorization: FarmAuthorization) => void; onSearch: () => void; query: string; selectedAgronomistId: string; selectedAreas: string[]; selectedPermissions: FarmPermissionType[]; setSelectedAgronomistId: (id: string) => void; submitting: boolean; zones: CareZoneOption[] }) {
   return (
     <>
-      <Section title="Farm đang quản lý" subtitle="Do backend chưa có owner farm list API, danh sách này được suy ra từ cultivation data thật. Backend vẫn kiểm tra owner khi thao tác.">
-        <SelectorRow emptyText="Chưa có farm thật để cấp quyền." label="Farm" onChange={onFarmChange} options={farms.map((farm) => ({ id: farm.farmId, label: farm.label }))} selectedId={farmId} />
+      <Section title="Vườn đang quản lý" subtitle="Chọn vườn để mời kỹ sư cộng tác.">
+        <SelectorRow emptyText="Chưa có vườn để cấp quyền." label="Farm" onChange={onFarmChange} options={farms.map((farm) => ({ id: farm.farmId, label: farm.label }))} selectedId={farmId} />
       </Section>
-      <Section title="Mời kỹ sư cộng tác" subtitle="Lời mời sau khi kỹ sư chấp nhận mới tạo FarmAuthorization ACTIVE.">
-        <View style={styles.searchBox}><Search color={durianTheme.colors.muted} size={18} /><TextInput onChangeText={onQueryChange} placeholder="Tìm kỹ sư/agronomist..." placeholderTextColor={durianTheme.colors.muted} style={styles.searchInput} value={query} /><Pressable disabled={submitting} onPress={onSearch} style={styles.smallButton}><Text style={styles.smallButtonText}>Tìm</Text></Pressable></View>
-        {agronomists.length ? <SelectorRow emptyText="Không có kỹ sư đủ điều kiện." label="Kỹ sư nhận lời mời" onChange={setSelectedAgronomistId} options={agronomists.map((item) => ({ id: item.id, label: `${item.fullName} · ${item.specialization ?? item.role}` }))} selectedId={selectedAgronomistId} /> : <EmptyText text="Nhập từ khóa rồi tìm kỹ sư đủ điều kiện từ backend." />}
+      <Section title="Mời kỹ sư cộng tác" subtitle="Quyền có hiệu lực sau khi kỹ sư chấp nhận lời mời.">
+        <View style={styles.searchBox}><Search color={durianTheme.colors.muted} size={18} /><TextInput onChangeText={onQueryChange} placeholder="Tìm kỹ sư..." placeholderTextColor={durianTheme.colors.muted} style={styles.searchInput} value={query} /><Pressable disabled={submitting} onPress={onSearch} style={styles.smallButton}><Text style={styles.smallButtonText}>Tìm</Text></Pressable></View>
+        {agronomists.length ? <SelectorRow emptyText="Không có kỹ sư đủ điều kiện." label="Kỹ sư nhận lời mời" onChange={setSelectedAgronomistId} options={agronomists.map((item) => ({ id: item.id, label: `${item.fullName} · ${item.specialization ?? item.role}` }))} selectedId={selectedAgronomistId} /> : <EmptyText text="Nhập từ khóa để tìm kỹ sư." />}
         <ScopeEditor selectedAreas={selectedAreas} selectedPermissions={selectedPermissions} onAreaToggle={onAreaToggle} onPermissionToggle={onPermissionToggle} zones={zones} />
         <TextInput multiline onChangeText={onMessageChange} placeholder="Tin nhắn mời cộng tác..." placeholderTextColor={durianTheme.colors.muted} style={[styles.input, styles.textArea]} value={message} />
-        <TextInput onChangeText={onExpiresAtChange} placeholder="expiresAt ISO, bỏ trống = backend +14 ngày" placeholderTextColor={durianTheme.colors.muted} style={styles.input} value={expiresAt} />
-        <Pressable disabled={submitting || !farmId || !selectedAgronomistId} onPress={onCreateInvitation} style={[styles.primaryButton, (submitting || !farmId || !selectedAgronomistId) && styles.disabled]}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <UserRoundPlus color={durianTheme.colors.white} size={18} />}<Text style={styles.primaryButtonText}>Gửi lời mời bằng API thật</Text></Pressable>
+        <TextInput onChangeText={onExpiresAtChange} placeholder="Ngày hết hạn (để trống = 14 ngày)" placeholderTextColor={durianTheme.colors.muted} style={styles.input} value={expiresAt} />
+        <Pressable disabled={submitting || !farmId || !selectedAgronomistId} onPress={onCreateInvitation} style={[styles.primaryButton, (submitting || !farmId || !selectedAgronomistId) && styles.disabled]}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <UserRoundPlus color={durianTheme.colors.white} size={18} />}<Text style={styles.primaryButtonText}>Gửi lời mời</Text></Pressable>
       </Section>
-      <Section title="Lời mời đang chờ" subtitle="Chỉ owner farm có quyền xem/hủy các lời mời của farm.">
-        {farmInvitations.length ? farmInvitations.map((item) => <InvitationCard key={item.id} invitation={item} onCancel={onCancelInvitation} submitting={submitting} />) : <EmptyText text="Chưa có lời mời pending cho farm này." />}
+      <Section title="Lời mời đang chờ" subtitle="Chỉ chủ vườn xem và hủy được lời mời.">
+        {farmInvitations.length ? farmInvitations.map((item) => <InvitationCard key={item.id} invitation={item} onCancel={onCancelInvitation} submitting={submitting} />) : <EmptyText text="Chưa có lời mời đang chờ cho vườn này." />}
       </Section>
-      <Section title="Kỹ sư đang được cấp quyền" subtitle="Update/revoke gọi trực tiếp farm-service và tải lại farm access sau mutation.">
+      <Section title="Kỹ sư đang được cấp quyền" subtitle="Cập nhật hoặc thu hồi quyền của kỹ sư.">
         {authorizations.length ? authorizations.map((item) => <AuthorizationCard key={item.id} authorization={item} onEdit={onEditAuthorization} onRevoke={onRevokeAuthorization} submitting={submitting} />) : <EmptyText text="Chưa cấp quyền truy cập cho ai." />}
       </Section>
     </>
@@ -379,15 +379,15 @@ function FarmerFlow({ agronomists, authorizations, expiresAt, farmId, farmInvita
 
 function EngineerFlow({ access, invitations, onAccept, onReject, submitting }: { access: AuthorizedFarmAccess[]; invitations: AgronomistInvitation[]; onAccept: (id: string) => void; onReject: (id: string) => void; submitting: boolean }) {
   const pending = invitations.filter((item) => item.status === "PENDING");
-  return <><Section title="Lời mời cộng tác" subtitle="Chấp nhận lời mời sẽ tạo FarmAuthorization ACTIVE ở backend.">{pending.length ? pending.map((item) => <EngineerInvitationCard invitation={item} key={item.id} onAccept={onAccept} onReject={onReject} submitting={submitting} />) : <EmptyText text="Bạn chưa có lời mời truy cập trang trại nào." />}</Section><Section title="Farm được cấp quyền" subtitle="/api/v1/me/authorized-farms chỉ trả authorization ACTIVE, chưa hết hạn.">{access.length ? access.map((item) => <AuthorizedFarmCard access={item} key={item.authorizationId} />) : <EmptyText text="Bạn chưa được cấp quyền truy cập trang trại nào." />}</Section></>;
+  return <><Section title="Lời mời cộng tác" subtitle="Chấp nhận lời mời để được truy cập vườn.">{pending.length ? pending.map((item) => <EngineerInvitationCard invitation={item} key={item.id} onAccept={onAccept} onReject={onReject} submitting={submitting} />) : <EmptyText text="Bạn chưa có lời mời truy cập trang trại nào." />}</Section><Section title="Vườn được cấp quyền" subtitle="Các vườn bạn đang được cấp quyền.">{access.length ? access.map((item) => <AuthorizedFarmCard access={item} key={item.authorizationId} />) : <EmptyText text="Bạn chưa được cấp quyền truy cập trang trại nào." />}</Section></>;
 }
 
 function ScopeEditor({ onAreaToggle, onPermissionToggle, selectedAreas, selectedPermissions, zones }: { onAreaToggle: (areaId: string) => void; onPermissionToggle: (permission: FarmPermissionType) => void; selectedAreas: string[]; selectedPermissions: FarmPermissionType[]; zones: CareZoneOption[] }) {
-  return <View style={styles.scopeBox}><Text style={styles.scopeTitle}>Phạm vi khu canh tác</Text>{zones.length ? <View style={styles.chipGrid}>{zones.map((zone) => <ToggleChip active={selectedAreas.includes(zone.zoneId)} key={zone.zoneId} label={zone.label} onPress={() => onAreaToggle(zone.zoneId)} />)}</View> : <Text style={styles.hint}>Không có zone catalog thật. Nếu để trống, backend tự dùng toàn bộ Farm.zones hiện có.</Text>}<Text style={styles.scopeTitle}>Quyền</Text><View style={styles.chipGrid}>{editablePermissions.map((permission) => <ToggleChip active={selectedPermissions.includes(permission.value)} key={permission.value} label={permission.label} onPress={() => onPermissionToggle(permission.value)} />)}</View></View>;
+  return <View style={styles.scopeBox}><Text style={styles.scopeTitle}>Phạm vi khu canh tác</Text>{zones.length ? <View style={styles.chipGrid}>{zones.map((zone) => <ToggleChip active={selectedAreas.includes(zone.zoneId)} key={zone.zoneId} label={zone.label} onPress={() => onAreaToggle(zone.zoneId)} />)}</View> : <Text style={styles.hint}>Để trống để cấp quyền toàn bộ khu.</Text>}<Text style={styles.scopeTitle}>Quyền</Text><View style={styles.chipGrid}>{editablePermissions.map((permission) => <ToggleChip active={selectedPermissions.includes(permission.value)} key={permission.value} label={permission.label} onPress={() => onPermissionToggle(permission.value)} />)}</View></View>;
 }
 
 function EditAuthorizationModal({ authorization, editAreas, editExpiresAt, editPermissions, onAreaToggle, onClose, onExpiresAtChange, onPermissionToggle, onSubmit, submitting, zones }: { authorization: FarmAuthorization | null; editAreas: string[]; editExpiresAt: string; editPermissions: FarmPermissionType[]; onAreaToggle: (areaId: string) => void; onClose: () => void; onExpiresAtChange: (value: string) => void; onPermissionToggle: (permission: FarmPermissionType) => void; onSubmit: () => void; submitting: boolean; zones: CareZoneOption[] }) {
-  return <Modal animationType="slide" onRequestClose={onClose} visible={authorization !== null}><SafeAreaView style={styles.safeArea}><View style={styles.modalHeader}><Pressable onPress={onClose} style={styles.iconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable><Text style={styles.modalTitle}>Cập nhật quyền</Text><View style={styles.iconButton} /></View><ScrollView contentContainerStyle={styles.content}>{authorization ? <Section title={`Authorization ${shortFoundationId(authorization.id)}`} subtitle="Chỉ ACTIVE authorization được backend cho phép cập nhật."><ScopeEditor selectedAreas={editAreas} selectedPermissions={editPermissions} onAreaToggle={onAreaToggle} onPermissionToggle={onPermissionToggle} zones={zones} /><TextInput onChangeText={onExpiresAtChange} placeholder="expiresAt ISO, bỏ trống = không giới hạn" placeholderTextColor={durianTheme.colors.muted} style={styles.input} value={editExpiresAt} /><Pressable disabled={submitting} onPress={onSubmit} style={[styles.primaryButton, submitting && styles.disabled]}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Check color={durianTheme.colors.white} size={18} />}<Text style={styles.primaryButtonText}>Lưu cập nhật</Text></Pressable></Section> : null}</ScrollView></SafeAreaView></Modal>;
+  return <Modal animationType="slide" onRequestClose={onClose} visible={authorization !== null}><SafeAreaView style={styles.safeArea}><View style={styles.modalHeader}><Pressable onPress={onClose} style={styles.iconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable><Text style={styles.modalTitle}>Cập nhật quyền</Text><View style={styles.iconButton} /></View><ScrollView contentContainerStyle={styles.content}>{authorization ? <Section title={"Quyền truy cập"} subtitle="Chỉ cập nhật được quyền đang có hiệu lực."><ScopeEditor selectedAreas={editAreas} selectedPermissions={editPermissions} onAreaToggle={onAreaToggle} onPermissionToggle={onPermissionToggle} zones={zones} /><TextInput onChangeText={onExpiresAtChange} placeholder="Ngày hết hạn (để trống = không giới hạn)" placeholderTextColor={durianTheme.colors.muted} style={styles.input} value={editExpiresAt} /><Pressable disabled={submitting} onPress={onSubmit} style={[styles.primaryButton, submitting && styles.disabled]}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Check color={durianTheme.colors.white} size={18} />}<Text style={styles.primaryButtonText}>Lưu cập nhật</Text></Pressable></Section> : null}</ScrollView></SafeAreaView></Modal>;
 }
 
 function Section({ children, subtitle, title }: { children: React.ReactNode; subtitle?: string; title: string }) {
@@ -403,7 +403,7 @@ function ToggleChip({ active, label, onPress }: { active: boolean; label: string
 }
 
 function InvitationCard({ invitation, onCancel, submitting }: { invitation: AgronomistInvitation; onCancel: (id: string) => void; submitting: boolean }) {
-  return <View style={styles.card}><Text style={styles.cardTitle}>Agronomist {shortFoundationId(invitation.agronomistId)}</Text><Text style={styles.cardMeta}>Farm {shortFoundationId(invitation.farmId)} · Hết hạn {formatDate(invitation.expiresAt)}</Text><Text style={styles.cardMeta}>Scope: {areaText(invitation.initialAllowedCultivationAreaIds)}</Text><Pressable disabled={submitting} onPress={() => onCancel(invitation.id)} style={styles.dangerButton}><ShieldX color={durianTheme.colors.danger} size={16} /><Text style={styles.dangerButtonText}>Hủy lời mời</Text></Pressable></View>;
+  return <View style={styles.card}><Text style={styles.cardTitle}>Kỹ sư {shortFoundationId(invitation.agronomistId)}</Text><Text style={styles.cardMeta}>Farm {shortFoundationId(invitation.farmId)} · Hết hạn {formatDate(invitation.expiresAt)}</Text><Text style={styles.cardMeta}>Scope: {areaText(invitation.initialAllowedCultivationAreaIds)}</Text><Pressable disabled={submitting} onPress={() => onCancel(invitation.id)} style={styles.dangerButton}><ShieldX color={durianTheme.colors.danger} size={16} /><Text style={styles.dangerButtonText}>Hủy lời mời</Text></Pressable></View>;
 }
 
 function EngineerInvitationCard({ invitation, onAccept, onReject, submitting }: { invitation: AgronomistInvitation; onAccept: (id: string) => void; onReject: (id: string) => void; submitting: boolean }) {
@@ -411,11 +411,11 @@ function EngineerInvitationCard({ invitation, onAccept, onReject, submitting }: 
 }
 
 function AuthorizationCard({ authorization, onEdit, onRevoke, submitting }: { authorization: FarmAuthorization; onEdit: (authorization: FarmAuthorization) => void; onRevoke: (authorization: FarmAuthorization) => void; submitting: boolean }) {
-  return <View style={styles.card}><View style={styles.cardTop}><Text style={styles.cardTitle}>Agronomist {shortFoundationId(authorization.agronomistId)}</Text><StatusPill status={authorization.status} /></View><Text style={styles.cardMeta}>Scope: {areaText(authorization.allowedCultivationAreaIds)}</Text><Text style={styles.cardMeta}>Quyền: {authorization.permissions.join(", ")}</Text><Text style={styles.cardMeta}>Cấp: {formatDate(authorization.grantedAt)} · Hết hạn: {formatDate(authorization.expiresAt)}</Text><View style={styles.actionRow}><Pressable disabled={submitting} onPress={() => onEdit(authorization)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Cập nhật</Text></Pressable><Pressable disabled={submitting} onPress={() => onRevoke(authorization)} style={styles.dangerButton}><ShieldX color={durianTheme.colors.danger} size={16} /><Text style={styles.dangerButtonText}>Thu hồi</Text></Pressable></View></View>;
+  return <View style={styles.card}><View style={styles.cardTop}><Text style={styles.cardTitle}>Kỹ sư {shortFoundationId(authorization.agronomistId)}</Text><StatusPill status={authorization.status} /></View><Text style={styles.cardMeta}>Scope: {areaText(authorization.allowedCultivationAreaIds)}</Text><Text style={styles.cardMeta}>Quyền: {authorization.permissions.join(", ")}</Text><Text style={styles.cardMeta}>Cấp: {formatDate(authorization.grantedAt)} · Hết hạn: {formatDate(authorization.expiresAt)}</Text><View style={styles.actionRow}><Pressable disabled={submitting} onPress={() => onEdit(authorization)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Cập nhật</Text></Pressable><Pressable disabled={submitting} onPress={() => onRevoke(authorization)} style={styles.dangerButton}><ShieldX color={durianTheme.colors.danger} size={16} /><Text style={styles.dangerButtonText}>Thu hồi</Text></Pressable></View></View>;
 }
 
 function AuthorizedFarmCard({ access }: { access: AuthorizedFarmAccess }) {
-  return <View style={styles.card}><View style={styles.cardTop}><Text style={styles.cardTitle}>{access.farmName?.trim() || `Farm ${shortFoundationId(access.farmId)}`}</Text><StatusPill status={access.status} /></View><Text style={styles.cardMeta}>Owner {shortFoundationId(access.ownerId)} · Authorization {shortFoundationId(access.authorizationId)}</Text><Text style={styles.cardMeta}>Scope: {areaText(access.allowedCultivationAreaIds)}</Text><Text style={styles.cardMeta}>Quyền: {access.permissions.join(", ")}</Text><Text style={styles.cardMeta}>Cấp: {formatDate(access.grantedAt)} · Hết hạn: {formatDate(access.expiresAt)}</Text></View>;
+  return <View style={styles.card}><View style={styles.cardTop}><Text style={styles.cardTitle}>{access.farmName?.trim() || `Vườn ${shortFoundationId(access.farmId)}`}</Text><StatusPill status={access.status} /></View><Text style={styles.cardMeta}>Owner {shortFoundationId(access.ownerId)} · Authorization {shortFoundationId(access.authorizationId)}</Text><Text style={styles.cardMeta}>Scope: {areaText(access.allowedCultivationAreaIds)}</Text><Text style={styles.cardMeta}>Quyền: {access.permissions.join(", ")}</Text><Text style={styles.cardMeta}>Cấp: {formatDate(access.grantedAt)} · Hết hạn: {formatDate(access.expiresAt)}</Text></View>;
 }
 
 function StatusPill({ status }: { status: string }) {

@@ -824,9 +824,7 @@ export function DurianProfileScreen() {
 
           {editing ? (
             <View style={styles.actionRow}>
-              <Text style={styles.actionNote}>
-                Dữ liệu sẽ được kiểm tra trước khi gửi lên backend.
-              </Text>
+              <View />
               <View style={styles.actionButtons}>
                 <Pressable
                   onPress={resetDraft}
@@ -959,7 +957,7 @@ export function DurianProfileScreen() {
             <View style={styles.sectionHeaderCopy}>
               <Text style={styles.sectionTitle}>Thông tin chỉ đọc</Text>
               <Text style={styles.sectionSubtitle}>
-                Những trường này lấy trực tiếp từ backend và không thể chỉnh sửa tại đây.
+                Những thông tin này không thể chỉnh sửa tại đây.
               </Text>
             </View>
           </View>

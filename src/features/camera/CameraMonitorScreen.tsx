@@ -42,6 +42,7 @@ import {
   type CameraCapture,
   type CameraDevice,
 } from "@/src/lib/iotApi";
+import { CAMERA_TONE_COLORS, cameraStatusView } from "./cameraStatus";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -393,6 +394,7 @@ export function CameraMonitorScreen() {
     return () => { active = false; clearInterval(timer); };
   }, []));
   useEffect(() => { setDeviceInfo(devices.find(row => row.device_id === deviceId) ?? null); }, [deviceId, devices]);
+  const statusView = cameraStatusView(deviceInfo);
 
   const [configVisible, setConfigVisible] = useState(false);
 
@@ -482,14 +484,14 @@ export function CameraMonitorScreen() {
                 <View style={{
                   flexDirection: "row", alignItems: "center", gap: 5,
                   paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99,
-                  backgroundColor: deviceInfo.online ? "#dcfce7" : "#fee2e2",
+                  backgroundColor: CAMERA_TONE_COLORS[statusView.tone].bg,
                 }}>
                   <View style={{
                     width: 6, height: 6, borderRadius: 3,
-                    backgroundColor: deviceInfo.online ? "#22c55e" : "#ef4444",
+                    backgroundColor: CAMERA_TONE_COLORS[statusView.tone].dot,
                   }} />
-                  <Text style={{ fontSize: 10, fontWeight: "700", color: deviceInfo.online ? "#15803d" : "#dc2626" }}>
-                    {deviceInfo.online ? "Online" : "Offline"}
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: CAMERA_TONE_COLORS[statusView.tone].text }}>
+                    {statusView.label}
                   </Text>
                 </View>
               )}
@@ -499,8 +501,9 @@ export function CameraMonitorScreen() {
             </View>
           </View>
           <View style={styles.previewBox}>
-            {!deviceInfo || deviceInfo.status !== "ONLINE" ? <Text style={styles.previewErrorText}>
-              {deviceInfo ? `Trạng thái đăng ký: ${deviceInfo.status}` : "Chưa có camera được cấp quyền."}
+            {!statusView.canPreview ? <Text style={styles.previewErrorText}>
+              {`Camera ${statusView.label.toLowerCase()}. ${statusView.message ?? ""}`}
+              {deviceInfo?.lastSeenAt ? `\nTín hiệu cuối: ${new Date(deviceInfo.lastSeenAt).toLocaleString("vi-VN")}` : ""}
             </Text> : null}
             {isCapturing && (
               <View style={styles.captureOverlay}>

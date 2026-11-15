@@ -8,7 +8,7 @@ test("screen has one origin-independent list but retains fixture write and stale
   assert.doesNotMatch(source,/dataScope|Dữ liệu minh họa|Mô phỏng/);
   assert.ok(source.includes("!isIllustration(batch) && isReleaseEligibleBatch(batch)"));
   assert.ok(source.includes("batches={releaseEligibleBatches}"));
-  assert.ok(source.includes("syntheticRelease(release) ? [] : releaseActions(release)"));
+  assert.ok(source.includes("if (syntheticRelease(release)) return [];"));
   assert.ok(source.includes("setTraceability(null)"));
   assert.ok(source.includes("traceability?.releaseId === selectedRelease?.id"));
 });

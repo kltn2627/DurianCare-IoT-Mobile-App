@@ -97,10 +97,6 @@ export function DurianKnowledgeDetailScreen() {
 
         <KnowledgeContentRenderer content={article.content} />
 
-        <View style={styles.disclaimer}>
-          <Text style={styles.disclaimerText}>Knowledge chưa có API comment, like hoặc bookmark riêng. Mobile chỉ hiển thị dữ liệu tương tác thật từ backend hiện có.</Text>
-        </View>
-
         {related.length ? (
           <View style={styles.related}>
             <Text style={styles.relatedTitle}>Bài liên quan</Text>

@@ -262,7 +262,7 @@ export function ProfileEditScreen() {
           eyebrow="HỒ SƠ CÁ NHÂN"
           icon={UserRound}
           title="Chỉnh sửa hồ sơ"
-          subtitle="Đang tải dữ liệu từ backend..."
+          subtitle="Đang tải dữ liệu..."
         />
       </SafeAreaView>
     );
