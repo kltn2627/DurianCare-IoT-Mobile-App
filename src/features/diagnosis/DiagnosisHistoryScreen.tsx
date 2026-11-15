@@ -171,7 +171,7 @@ export function DurianDiagnosisHistoryScreen() {
                   <Text numberOfLines={3} style={styles.summary}>
                     {item.recommendation?.diseaseSummary ??
                       detail?.summary ??
-                      "Kết quả chẩn đoán được lưu bởi backend AI service."}
+                      "Kết quả chẩn đoán AI."}
                   </Text>
                   <View style={styles.actions}>
                     <Pressable

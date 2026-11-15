@@ -20,6 +20,7 @@ import {
   loadAuthTokens,
 } from "@/src/features/auth/authTokenStore";
 import type { AuthSession, AuthRole } from "@/src/features/auth/authTypes";
+import { pushRegistration } from "@/src/features/notification/push/pushRuntime";
 import { profileClient } from "@/src/features/profile/profileApi";
 import type { ProfileRecord } from "@/src/features/profile/profileTypes";
 
@@ -253,6 +254,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(
     async function logoutEverywhere() {
       try {
+        await pushRegistration.unregisterBeforeLogout();
         await logoutRequest();
       } finally {
         await clearLocalSession();

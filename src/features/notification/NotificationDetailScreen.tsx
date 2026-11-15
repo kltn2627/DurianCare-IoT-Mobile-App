@@ -1,10 +1,12 @@
 import { Bell, CalendarClock, CheckCheck, ExternalLink, LoaderCircle, Trash2 } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ConfirmModal } from "@/src/components/ConfirmModal";
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
+import { ToastBanner, type ToastState } from "@/src/components/ToastBanner";
 import { friendlyApiMessage } from "@/src/lib/feedback";
 import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
 import { useSession } from "@/src/session/SessionContext";
@@ -12,6 +14,7 @@ import { durianTheme } from "@/src/theme/durianTheme";
 
 import { notificationClient, NotificationApiError } from "./notificationApi";
 import { resolveNotificationTarget } from "./notificationTargetResolver";
+import { notificationSource, notificationTypeLabel } from "./presentation";
 import type { NotificationItem } from "./types";
 
 function formatDate(value: string) {
@@ -34,6 +37,10 @@ export function NotificationDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<"read" | "delete" | null>(null);
   const [error, setError] = useState("");
+  const [toast, setToast] = useState<ToastState>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const busyRef = useRef(false);
+  const closeToast = useCallback(() => setToast(null), []);
 
   const id = useMemo(() => {
     const raw = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -78,57 +85,54 @@ export function NotificationDetailScreen() {
   }, [loadDetail]);
 
   const markRead = useCallback(async () => {
-    if (!item || !session?.user.id) return;
+    if (!item || !session?.user.id || busyRef.current) return;
+    busyRef.current = true;
     setActionLoading("read");
     try {
       await notificationClient.markRead(item.id);
       setItem({ ...item, isRead: true });
+      setToast({ tone: "success", message: "Đã đánh dấu thông báo là đã đọc." });
     } catch (cause) {
-      setError(
-        friendlyApiMessage(
+      setToast({
+        tone: "error",
+        message: friendlyApiMessage(
           cause instanceof NotificationApiError
             ? { message: cause.message, status: cause.status }
             : null,
           "notification",
-          "Không thể đánh dấu đã đọc.",
+          "Không thể cập nhật thông báo. Vui lòng thử lại.",
         ),
-      );
+      });
     } finally {
+      busyRef.current = false;
       setActionLoading(null);
     }
   }, [item, session?.user.id]);
 
-  const remove = useCallback(() => {
-    if (!item || !session?.user.id) return;
-    Alert.alert("Xóa thông báo", "Bạn muốn xóa thông báo này?", [
-      { text: "Hủy", style: "cancel" },
-      {
-        text: "Xóa",
-        style: "destructive",
-        onPress: () => {
-          void (async () => {
-            setActionLoading("delete");
-            try {
-              await notificationClient.delete(item.id);
-              setItem(null);
-              setError("Thông báo đã được xóa.");
-            } catch (cause) {
-              setError(
-                friendlyApiMessage(
-                  cause instanceof NotificationApiError
-                    ? { message: cause.message, status: cause.status }
-                    : null,
-                  "notification",
-                  "Không thể xóa thông báo.",
-                ),
-              );
-            } finally {
-              setActionLoading(null);
-            }
-          })();
-        },
-      },
-    ]);
+  const remove = useCallback(async () => {
+    if (!item || !session?.user.id || busyRef.current) return;
+    busyRef.current = true;
+    setActionLoading("delete");
+    try {
+      await notificationClient.delete(item.id);
+      setItem(null);
+      setToast({ tone: "success", message: "Đã xóa thông báo." });
+    } catch (cause) {
+      setToast({
+        tone: "error",
+        message: friendlyApiMessage(
+          cause instanceof NotificationApiError
+            ? { message: cause.message, status: cause.status }
+            : null,
+          "notification",
+          "Không thể xóa thông báo. Vui lòng thử lại.",
+        ),
+      });
+    } finally {
+      busyRef.current = false;
+      setActionLoading(null);
+      setConfirmDelete(false);
+    }
   }, [item, session?.user.id]);
 
   const openTarget = useCallback(async () => {
@@ -185,7 +189,9 @@ export function NotificationDetailScreen() {
               </View>
               <View style={styles.headerCopy}>
                 <Text style={styles.title}>{item.title}</Text>
-                <Text style={styles.meta}>{item.type}</Text>
+                <Text style={styles.meta}>
+                  {notificationTypeLabel(item.type)}{notificationSource(item) ? ` · ${notificationSource(item)}` : ""}
+                </Text>
               </View>
               {!item.isRead ? (
                 <View style={styles.unreadBadge}>
@@ -231,12 +237,12 @@ export function NotificationDetailScreen() {
                 ) : (
                   <CheckCheck color={durianTheme.colors.moss} size={16} />
                 )}
-                <Text style={styles.secondaryButtonText}>Đánh dấu đã đọc</Text>
+                <Text style={styles.secondaryButtonText}>{item.isRead ? "Đã đọc" : "Đánh dấu đã đọc"}</Text>
               </Pressable>
 
               <Pressable
-                disabled={actionLoading === "delete"}
-                onPress={() => remove()}
+                disabled={actionLoading !== null}
+                onPress={() => setConfirmDelete(true)}
                 style={({ pressed }) => [
                   styles.deleteButton,
                   actionLoading === "delete" && styles.disabled,
@@ -252,8 +258,23 @@ export function NotificationDetailScreen() {
               </Pressable>
             </View>
           </View>
+        ) : !error ? (
+          <View style={styles.errorCard}>
+            <Text style={styles.errorText}>Thông báo không còn trong hộp thư.</Text>
+          </View>
         ) : null}
       </ScrollView>
+      <ConfirmModal
+        visible={confirmDelete}
+        title="Xóa thông báo này?"
+        message="Thông báo sẽ được xóa khỏi hộp thư của bạn và không thể khôi phục."
+        confirmLabel="Xóa"
+        tone="danger"
+        busy={actionLoading === "delete"}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => void remove()}
+      />
+      <ToastBanner toast={toast} onClose={closeToast} />
     </SafeAreaView>
   );
 }

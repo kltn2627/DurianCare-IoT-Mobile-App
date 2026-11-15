@@ -25,16 +25,16 @@ export function ChangePasswordScreen() {
         eyebrow="HỒ SƠ CÁ NHÂN"
         icon={KeyRound}
         title="Đổi mật khẩu"
-        subtitle="Màn hình này được tạo để parity với Web, nhưng contract backend hiện tại chưa có endpoint đổi mật khẩu."
+        subtitle="Chức năng đổi mật khẩu đang được hoàn thiện."
       />
 
       <KeyboardAwareScrollView contentContainerStyle={styles.content}>
         <View style={styles.noteCard}>
           <ShieldAlert color={durianTheme.colors.danger} size={20} />
           <View style={styles.noteCopy}>
-            <Text style={styles.noteTitle}>Chưa có API backend</Text>
+            <Text style={styles.noteTitle}>Chưa hỗ trợ</Text>
             <Text style={styles.noteText}>
-              Để tránh fake API, nút đổi mật khẩu đang được tắt. Khi backend bổ sung contract, màn này có thể được nối vào ngay.
+              Hiện chưa thể đổi mật khẩu trên ứng dụng.
             </Text>
           </View>
         </View>

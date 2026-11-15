@@ -199,10 +199,10 @@ function releaseActions(release: ExportRelease, canApprove: boolean): Array<{ la
     return [{ label: "Tự kiểm tra", value: "inspect" }];
   }
   if (["APPROVED", "INSPECTED_PASSED"].includes(release.status)) {
-    return canApprove ? [
+    return [
       { label: "Phát hành", value: "release" },
       { label: "Thu hồi", value: "recall" },
-    ] : [];
+    ];
   }
   if (release.status === "RELEASED") return [{ label: "Thu hồi", value: "recall" }];
   return [];

@@ -3,6 +3,7 @@ import type { AxiosRequestConfig } from "axios";
 import { authorizedRequest } from "@/src/features/auth/authApi";
 import { getApiBaseUrl } from "@/src/lib/apiBase";
 
+import type { RegisterDeviceBody } from "./push/pushRegistration";
 import type {
   NotificationApiErrorBody,
   NotificationCountResponse,
@@ -91,6 +92,19 @@ export const notificationClient = {
       baseURL: getApiBaseUrl(),
       method: "DELETE",
       url: `/api/v1/notification/notifications/${encodeURIComponent(id)}`,
+    }),
+  registerDevice: (body: RegisterDeviceBody) =>
+    requestVoid({
+      baseURL: getApiBaseUrl(),
+      data: body,
+      method: "PUT",
+      url: "/api/v1/notification/device-tokens",
+    }),
+  unregisterDevice: (deviceId: string) =>
+    requestVoid({
+      baseURL: getApiBaseUrl(),
+      method: "DELETE",
+      url: `/api/v1/notification/device-tokens/${encodeURIComponent(deviceId)}`,
     }),
 };
 

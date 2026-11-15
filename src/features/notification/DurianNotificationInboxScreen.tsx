@@ -9,10 +9,10 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   FlatList,
+  RefreshControl,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,14 +21,18 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ConfirmModal } from "@/src/components/ConfirmModal";
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
+import { ToastBanner, type ToastState } from "@/src/components/ToastBanner";
 import { friendlyApiMessage } from "@/src/lib/feedback";
 import { useDurianSafeNavigation } from "@/src/navigation/useDurianSafeNavigation";
 import { useSession } from "@/src/session/SessionContext";
 import { durianTheme } from "@/src/theme/durianTheme";
 
 import { notificationClient, NotificationApiError } from "./notificationApi";
+import { subscribePushReceived } from "./push/pushRuntime";
 import { resolveNotificationTarget } from "./notificationTargetResolver";
+import { notificationSource, notificationTypeLabel } from "./presentation";
 import type {
   NotificationItem,
   NotificationPageResponse,
@@ -123,7 +127,7 @@ function NotificationCard({
             <Text style={styles.cardTitle}>{item.title}</Text>
             {!item.isRead ? <View style={styles.unreadBadge}><Text style={styles.unreadText}>Chưa đọc</Text></View> : null}
             <View style={[styles.typeBadge, notificationTone(item.type)]}>
-              <Text style={styles.typeText}>{item.type}</Text>
+              <Text style={styles.typeText}>{notificationTypeLabel(item.type)}</Text>
             </View>
           </View>
           <Text style={styles.cardMessage}>{item.message}</Text>
@@ -132,10 +136,12 @@ function NotificationCard({
               <Clock3 color={durianTheme.colors.muted} size={12} />
               <Text style={styles.metaText}>{formatDate(item.createdAt)}</Text>
             </View>
-            <View style={styles.metaItem}>
-              <Inbox color={durianTheme.colors.muted} size={12} />
-              <Text style={styles.metaText}>{item.id}</Text>
-            </View>
+            {notificationSource(item) ? (
+              <View style={styles.metaItem}>
+                <Inbox color={durianTheme.colors.muted} size={12} />
+                <Text style={styles.metaText}>{notificationSource(item)}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
       </View>
@@ -146,7 +152,7 @@ function NotificationCard({
           style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, item.isRead && styles.disabled]}
         >
           {busy ? <LoaderCircle color={durianTheme.colors.moss} size={14} /> : <Check color={durianTheme.colors.moss} size={14} />}
-          <Text style={styles.secondaryButtonText}>Đánh dấu đã đọc</Text>
+          <Text style={styles.secondaryButtonText}>{item.isRead ? "Đã đọc" : "Đánh dấu đã đọc"}</Text>
         </Pressable>
         <Pressable
           disabled={busy}
@@ -205,6 +211,12 @@ export function DurianNotificationInboxScreen() {
   const [error, setError] = useState("");
   const [refreshSeed, setRefreshSeed] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Synchronous guard: a second tap before React re-renders the disabled button sends nothing.
+  const busyRef = useRef(false);
+  const [toast, setToast] = useState<ToastState>(null);
+  const [confirmMarkAll, setConfirmMarkAll] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const closeToast = useCallback(() => setToast(null), []);
 
   useEffect(() => {
     let active = true;
@@ -273,97 +285,67 @@ export function DurianNotificationInboxScreen() {
     setRefreshSeed((current) => current + 1);
   }, []);
 
+  useEffect(() => subscribePushReceived(refresh), [refresh]);
+
   const changeMode = useCallback((nextMode: ViewMode) => {
     setPage(0);
     setMode(nextMode);
   }, []);
 
-  const markRead = useCallback(
-    async (id: string) => {
-      if (!userId) return;
-      setBusyId(id);
+  // Action failures keep the list on screen and are reported in an error toast.
+  const actionFailed = useCallback((cause: unknown, fallback: string) => {
+    setToast({
+      tone: "error",
+      message: friendlyApiMessage(
+        cause instanceof NotificationApiError
+          ? { status: cause.status, message: cause.message }
+          : null,
+        "notification",
+        fallback,
+      ),
+    });
+  }, []);
+
+  const runAction = useCallback(
+    async (key: string, action: () => Promise<unknown>, success: string, failure: string) => {
+      if (!userId || busyRef.current) return false;
+      busyRef.current = true;
+      setBusyId(key);
       try {
-        await notificationClient.markRead(id);
+        await action();
+        setToast({ tone: "success", message: success });
         refresh();
+        return true;
       } catch (cause) {
-        setError(
-          friendlyApiMessage(
-            cause instanceof NotificationApiError
-              ? { status: cause.status, message: cause.message }
-              : null,
-            "notification",
-            "Không thể đánh dấu đã đọc.",
-          ),
-        );
+        actionFailed(cause, failure);
+        return false;
       } finally {
+        busyRef.current = false;
         setBusyId(null);
       }
     },
-    [refresh, userId],
+    [actionFailed, refresh, userId],
   );
 
-  const markAllRead = useCallback(() => {
-    if (!userId) return;
-    Alert.alert("Đánh dấu tất cả", "Đánh dấu toàn bộ thông báo hiện tại là đã đọc?", [
-      { text: "Huỷ", style: "cancel" },
-      {
-        text: "Đồng ý",
-        style: "default",
-        onPress: async () => {
-          setBusyId("__all__");
-          try {
-            await notificationClient.markAllRead();
-            refresh();
-          } catch (cause) {
-            setError(
-              friendlyApiMessage(
-                cause instanceof NotificationApiError
-                  ? { status: cause.status, message: cause.message }
-                  : null,
-                "notification",
-                "Không thể đánh dấu tất cả đã đọc.",
-              ),
-            );
-          } finally {
-            setBusyId(null);
-          }
-        },
-      },
-    ]);
-  }, [refresh, userId]);
-
-  const removeNotification = useCallback(
+  const markRead = useCallback(
     (id: string) => {
-      if (!userId) return;
-      Alert.alert("Xoá thông báo", "Xoá thông báo này khỏi hộp thư?", [
-        { text: "Huỷ", style: "cancel" },
-        {
-          text: "Xoá",
-          style: "destructive",
-          onPress: async () => {
-            setBusyId(id);
-            try {
-              await notificationClient.delete(id);
-              refresh();
-            } catch (cause) {
-              setError(
-                friendlyApiMessage(
-                  cause instanceof NotificationApiError
-                    ? { status: cause.status, message: cause.message }
-                    : null,
-                  "notification",
-                  "Không thể xoá thông báo.",
-                ),
-              );
-            } finally {
-              setBusyId(null);
-            }
-          },
-        },
-      ]);
+      void runAction(id, () => notificationClient.markRead(id),
+        "Đã đánh dấu thông báo là đã đọc.", "Không thể cập nhật thông báo. Vui lòng thử lại.");
     },
-    [refresh, userId],
+    [runAction],
   );
+
+  const markAllRead = useCallback(async () => {
+    await runAction("__all__", () => notificationClient.markAllRead(),
+      "Đã đánh dấu tất cả thông báo là đã đọc.", "Không thể cập nhật thông báo. Vui lòng thử lại.");
+    setConfirmMarkAll(false);
+  }, [runAction]);
+
+  const removeNotification = useCallback(async (id: string) => {
+    await runAction(id, () => notificationClient.delete(id),
+      "Đã xóa thông báo.", "Không thể xóa thông báo. Vui lòng thử lại.");
+    setPendingDelete(null);
+  }, [runAction]);
 
   const openNotificationTarget = useCallback(
     (notification: NotificationItem) => {
@@ -452,8 +434,9 @@ export function DurianNotificationInboxScreen() {
 
               <View style={styles.actionRow}>
                 <Pressable
+                  disabled={loading}
                   onPress={refresh}
-                  style={({ pressed }) => [styles.refreshButton, pressed && styles.pressed]}
+                  style={({ pressed }) => [styles.refreshButton, pressed && styles.pressed, loading && styles.disabled]}
                 >
                   <RefreshCw color={durianTheme.colors.moss} size={16} />
                   <Text style={styles.refreshButtonText}>Làm mới</Text>
@@ -461,7 +444,7 @@ export function DurianNotificationInboxScreen() {
                 {mode === "UNREAD" ? (
                   <Pressable
                     disabled={busyId === "__all__" || unreadCount === 0}
-                    onPress={markAllRead}
+                    onPress={() => setConfirmMarkAll(true)}
                     style={({ pressed }) => [
                       styles.primaryButton,
                       (busyId === "__all__" || unreadCount === 0) && styles.disabled,
@@ -489,6 +472,14 @@ export function DurianNotificationInboxScreen() {
           error ? (
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>{error}</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={refresh}
+                style={({ pressed }) => [styles.refreshButton, pressed && styles.pressed]}
+              >
+                <RefreshCw color={durianTheme.colors.moss} size={16} />
+                <Text style={styles.refreshButtonText}>Thử lại</Text>
+              </Pressable>
             </View>
           ) : loading ? (
             <View style={styles.listGap}>
@@ -505,9 +496,6 @@ export function DurianNotificationInboxScreen() {
               <Inbox color={durianTheme.colors.mossSoft} size={36} />
               <Text style={styles.emptyTitle}>
                 {mode === "UNREAD" ? "Không còn thông báo chưa đọc" : "Chưa có thông báo nào"}
-              </Text>
-              <Text style={styles.emptyText}>
-                Thông báo hệ thống sẽ xuất hiện ở đây khi backend phát sinh OTP, cảnh báo hoặc nhắc việc.
               </Text>
             </View>
           )
@@ -568,14 +556,34 @@ export function DurianNotificationInboxScreen() {
               busy={busyId === item.id}
               item={item}
               onOpenDetail={openNotificationTarget}
-              onDelete={removeNotification}
+              onDelete={setPendingDelete}
               onMarkRead={markRead}
             />
           ),
-          [busyId, markRead, openNotificationTarget, removeNotification],
+          [busyId, markRead, openNotificationTarget],
         )}
+        refreshControl={<RefreshControl refreshing={loading && data !== null} onRefresh={refresh} tintColor={durianTheme.colors.moss} />}
         showsVerticalScrollIndicator={false}
       />
+      <ConfirmModal
+        visible={confirmMarkAll}
+        title="Xác nhận đánh dấu tất cả đã đọc"
+        message="Bạn có chắc muốn đánh dấu toàn bộ thông báo là đã đọc không?"
+        busy={busyId === "__all__"}
+        onCancel={() => setConfirmMarkAll(false)}
+        onConfirm={() => void markAllRead()}
+      />
+      <ConfirmModal
+        visible={pendingDelete !== null}
+        title="Xóa thông báo này?"
+        message="Thông báo sẽ được xóa khỏi hộp thư của bạn và không thể khôi phục."
+        confirmLabel="Xóa"
+        tone="danger"
+        busy={pendingDelete !== null && busyId === pendingDelete}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => { if (pendingDelete) void removeNotification(pendingDelete); }}
+      />
+      <ToastBanner toast={toast} onClose={closeToast} />
     </SafeAreaView>
   );
 }

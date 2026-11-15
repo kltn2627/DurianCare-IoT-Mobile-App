@@ -221,7 +221,7 @@ export function AvatarManagementScreen() {
           eyebrow="HỒ SƠ CÁ NHÂN"
           icon={UserRound}
           title="Quản lý avatar"
-          subtitle="Đang tải dữ liệu từ backend..."
+          subtitle="Đang tải dữ liệu..."
         />
       </SafeAreaView>
     );

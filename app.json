@@ -11,6 +11,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.duriancare.smartfarm",
       "adaptiveIcon": {
         "backgroundColor": "#2E5A44",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -48,6 +49,14 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#2E5A44",
+          "defaultChannel": "duriancare-alerts"
+        }
+      ],
       [
         "expo-splash-screen",
         {

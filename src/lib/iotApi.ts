@@ -152,7 +152,12 @@ export function getSnapshotUrl(deviceId: string): string {
 // ── Camera Device Registry ────────────────────────────────────────────────────
 
 export type CameraDevice = {
-  status: "ONLINE" | "OFFLINE" | "UNKNOWN";
+  /** DEGRADED: heartbeat is fresh but the camera's own frame-grab self-test failed. */
+  status: "ONLINE" | "DEGRADED" | "OFFLINE" | "UNKNOWN";
+  previewAvailable?: boolean;
+  cameraReady?: boolean | null;
+  lastError?: string | null;
+  lastSeenAt?: string | null;
   endpointVersion: string;
   snapshotUrl: string;
   id:               string;

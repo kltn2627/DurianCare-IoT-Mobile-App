@@ -230,14 +230,14 @@ export function DurianOperationsScreen() {
 
           <Text style={styles.heroCopy}>
             {isOwner
-              ? `Tổng quan từ dữ liệu thật của ${primaryFarmLabel}: lịch chăm sóc, chẩn đoán, chat và thông báo.`
+              ? `Tổng quan ${primaryFarmLabel}: lịch chăm sóc, chẩn đoán, chat và thông báo.`
               : "Tổng quan công việc từ farm được ủy quyền, lịch chăm sóc, trao đổi kỹ thuật và thông báo mới."}
           </Text>
 
           <View style={styles.connection}>
             <CheckCircle2 color={durianTheme.colors.durianYellow} size={16} />
             <Text style={styles.connectionText}>
-              Đồng bộ qua API thật • Kéo xuống để làm mới từng nguồn dữ liệu
+              Kéo xuống để làm mới
             </Text>
           </View>
         </View>
@@ -275,7 +275,7 @@ export function DurianOperationsScreen() {
           icon={ShieldCheck}
           title={primaryFarmLabel}
           body={`${foundation.zoneCount} khu/plot từ authorized scope, kế hoạch hoặc hoạt động canh tác. ${data.plans.length} kế hoạch đã được tải.`}
-          meta={errors.authorizedFarms ? "Nguồn farm authorization đang lỗi, vẫn hiển thị dữ liệu canh tác nếu có." : "Farm/zone lấy từ API thật."}
+          meta={errors.authorizedFarms ? "Chưa tải được danh sách vườn được cấp quyền." : "Vườn và khu canh tác của bạn."}
         />
 
         <Text style={styles.sectionTitle}>Công việc ưu tiên</Text>
@@ -303,7 +303,7 @@ export function DurianOperationsScreen() {
         )}
 
         <ActionCard
-          description="Mở lịch chăm sóc để tạo, cập nhật trạng thái và ghi nhận công việc bằng API cultivation."
+          description="Mở lịch chăm sóc để tạo, cập nhật trạng thái và ghi nhận công việc."
           icon={CalendarDays}
           label="Mở lịch canh tác"
           onPress={() => navigation.push("/(main)/calendar")}
@@ -316,7 +316,7 @@ export function DurianOperationsScreen() {
               ? `${latestDiagnosis.diseaseName} • ${latestDiagnosis.confidenceText ?? `${Math.round(latestDiagnosis.confidence * 100)}%`} • ${formatDateTime(latestDiagnosis.createdAt)}`
               : errors.diagnoses
                 ? "Không thể tải lịch sử AI Diagnosis lúc này."
-                : "Chưa có chẩn đoán gần đây từ backend."
+                : "Chưa có chẩn đoán gần đây."
           }
           icon={Stethoscope}
           meta="Nguồn: /api/v1/predict/history"
@@ -357,7 +357,7 @@ export function DurianOperationsScreen() {
           onPress={() => navigation.push("/(main)/chat")}
         />
         <ActionCard
-          description="Xem feed, bình luận, phản ứng và bài viết cộng đồng bằng API Community."
+          description="Xem feed, bình luận, phản ứng và bài viết cộng đồng."
           icon={Users}
           label="Cộng đồng DurianCare"
           onPress={() => navigation.push("/(main)/community")}
@@ -520,9 +520,9 @@ function IotSummary({
       <View style={styles.unavailableCard}>
         <WifiOff color={durianTheme.colors.muted} size={22} />
         <View style={styles.alertCopy}>
-          <Text style={styles.unavailableTitle}>Chưa có device registry</Text>
+          <Text style={styles.unavailableTitle}>Chưa có thiết bị cảm biến</Text>
           <Text style={styles.alertText}>
-            API đọc telemetry đã có, nhưng chưa có thiết bị nào được gắn farm/khu trong registry mà tài khoản này được quyền xem.
+            Chưa có thiết bị nào được gắn với vườn của bạn.
           </Text>
         </View>
       </View>
@@ -533,7 +533,7 @@ function IotSummary({
       body={
         telemetry
           ? `Nhiệt độ ${formatTelemetryMetric(telemetry.temperature, "°C")} • Độ ẩm ${formatTelemetryMetric(telemetry.humidity, "%")} • Ánh sáng ${formatTelemetryMetric(telemetry.light, "raw")}`
-          : "Thiết bị đã được phân quyền nhưng chưa có telemetry."
+          : "Thiết bị chưa gửi dữ liệu."
       }
       icon={WifiOff}
       meta={`Thiết bị ${device.name} • ${telemetry?.receivedAt ? formatDateTime(telemetry.receivedAt) : "chưa ghi nhận"}`}

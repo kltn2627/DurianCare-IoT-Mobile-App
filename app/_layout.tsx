@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
 
+import { PushNotificationBridge } from "@/src/features/notification/push/PushNotificationBridge";
 import { DurianNavigationGate } from "@/src/navigation/DurianNavigationGate";
 import { SessionProvider } from "@/src/session/SessionContext";
 import { WorkspaceProvider } from "@/src/workspace/WorkspaceContext";
@@ -16,6 +17,7 @@ export default function DurianCareRootLayout() {
       <WorkspaceProvider>
         <DurianNavigationGate>
           <StatusBar style="dark" />
+          <PushNotificationBridge />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="login" />
             <Stack.Screen name="register" />

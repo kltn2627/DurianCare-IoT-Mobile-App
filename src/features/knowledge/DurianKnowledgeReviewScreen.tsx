@@ -78,7 +78,7 @@ export function DurianKnowledgeReviewScreen() {
     if (!rejectingArticle) return;
     const reason = rejectReason.trim();
     if (!reason) {
-      Alert.alert("Thiếu lý do", "Backend yêu cầu rejection reason.");
+      Alert.alert("Thiếu lý do", "Vui lòng nhập lý do từ chối.");
       return;
     }
     setBusyId(rejectingArticle.id);

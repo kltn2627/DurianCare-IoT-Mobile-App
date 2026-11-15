@@ -136,7 +136,7 @@ function CommentNode({ canDelete, comment, onDelete, onReply, replyDraft, setRep
 }
 
 function confirmDelete(post: CommunityPost, onConfirm: () => void) {
-  Alert.alert("Ẩn bài viết?", "Backend sẽ chuyển trạng thái bài sang HIDDEN.", [
+  Alert.alert("Ẩn bài viết?", "Bài viết sẽ bị ẩn khỏi bảng tin.", [
     { text: "Hủy", style: "cancel" },
     { onPress: onConfirm, style: "destructive", text: "Ẩn bài" },
   ]);

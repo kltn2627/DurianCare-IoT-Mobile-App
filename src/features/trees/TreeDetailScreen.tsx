@@ -3,7 +3,6 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -24,6 +23,7 @@ import {
   RefreshCcw,
   Trash2,
 } from "lucide-react-native";
+import { ConfirmModal } from "@/src/components/ConfirmModal";
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
 import { durianTheme } from "@/src/theme/durianTheme";
 import { predictDurianDisease, type DiseasePrediction } from "@/src/features/scanner/diseasePredictionApi";
@@ -52,6 +52,7 @@ import type {
   TreeCareTask,
   TreeDetail,
   TreeDiagnosis,
+  TreeHealthStatus,
 } from "./treeTypes";
 import { knowledgeApi } from "@/src/features/knowledge/knowledgeApi";
 import type { KnowledgeArticle } from "@/src/features/knowledge/knowledgeTypes";
@@ -144,6 +145,13 @@ function InfoRow({ label, value }: { label: string; value?: string | number | nu
 
 // ── AI Panel ──────────────────────────────────────────────────────────────────
 
+const RISK_LABEL: Record<string, string> = {
+  LOW: "Thấp",
+  MEDIUM: "Trung bình",
+  HIGH: "Cao",
+  CRITICAL: "Nghiêm trọng",
+};
+
 interface AIPanelProps {
   treeId: string;
   treeCode: string;
@@ -161,6 +169,11 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
   const [savedOk, setSavedOk] = useState(false);
   const [kbArticles, setKbArticles] = useState<KnowledgeArticle[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+  // Synchronous guards: a fast double tap must not send two uploads or two saves.
+  const predictingRef = useRef(false);
+  const savingRef = useRef(false);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   useEffect(() => {
     if (!prediction || prediction.disease.category === "HEALTHY"
@@ -202,6 +215,11 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
   }
 
   async function pickFromGallery() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      setPredError("Cần cấp quyền truy cập thư viện ảnh.");
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       quality: 0.85,
@@ -216,7 +234,8 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
   }
 
   async function analyze() {
-    if (!photo) return;
+    if (!photo || predictingRef.current) return;
+    predictingRef.current = true;
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -234,16 +253,20 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
         setPredError(err instanceof Error ? err.message : "Phân tích thất bại.");
       }
     } finally {
+      predictingRef.current = false;
       if (!ctrl.signal.aborted) setPredicting(false);
     }
   }
 
   async function saveResult() {
-    if (!prediction || !photo) return;
+    if (!prediction || !photo || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
+    setPredError(null);
     try {
       await saveDiagnosis(treeId, {
-        imageUrl: photo.uri,
+        // Server-stored image from /api/v1/predict; a device-local file:// path is useless to other clients.
+        imageUrl: prediction.image?.url || "MOBILE_AI_NO_STORED_IMAGE",
         diseaseCode: prediction.disease.code,
         diseaseName: prediction.disease.name,
         confidence: prediction.confidence / 100,
@@ -255,11 +278,15 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
     } catch (err) {
       setPredError(err instanceof Error ? err.message : "Lưu thất bại.");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
 
   const cat = prediction?.disease.category;
+  const risk = prediction?.decisionSupport?.riskLevel;
+  const actions = (prediction?.decisionSupport?.immediateActions ?? []).filter(Boolean).slice(0, 4);
+  const summary = prediction?.recommendation?.diseaseSummary;
 
   return (
     <View style={styles.card}>
@@ -268,7 +295,9 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
         style={styles.panelHeader}
         accessibilityRole="button"
       >
-        <Text style={styles.cardTitle}>Phân tích AI</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle}>Chẩn đoán bệnh bằng ảnh</Text>
+        </View>
         {expanded ? (
           <ChevronUp size={16} color={durianTheme.colors.muted} />
         ) : (
@@ -281,13 +310,15 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
           {/* Photo picker buttons */}
           {!savedOk ? (
             <View style={styles.pickerRow}>
-              <Pressable onPress={pickFromCamera} style={styles.pickerBtn}>
+              <Pressable onPress={pickFromCamera} disabled={predicting || saving}
+                style={[styles.pickerBtn, (predicting || saving) && { opacity: 0.5 }]}>
                 <Camera size={15} color={durianTheme.colors.moss} />
                 <Text style={styles.pickerBtnText}>Chụp ảnh</Text>
               </Pressable>
-              <Pressable onPress={pickFromGallery} style={styles.pickerBtn}>
+              <Pressable onPress={pickFromGallery} disabled={predicting || saving}
+                style={[styles.pickerBtn, (predicting || saving) && { opacity: 0.5 }]}>
                 <Images size={15} color={durianTheme.colors.moss} />
-                <Text style={styles.pickerBtnText}>Thư viện</Text>
+                <Text style={styles.pickerBtnText}>{photo ? "Chọn ảnh khác" : "Thư viện"}</Text>
               </Pressable>
             </View>
           ) : null}
@@ -319,9 +350,10 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
           {photo && !prediction && !predicting && !savedOk ? (
             <Pressable
               onPress={analyze}
+              disabled={predicting}
               style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.8 }]}
             >
-              <Text style={styles.primaryBtnText}>Phân tích</Text>
+              <Text style={styles.primaryBtnText}>Tải ảnh lên & chẩn đoán</Text>
             </Pressable>
           ) : null}
 
@@ -347,6 +379,18 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
               <Text style={styles.resultDisease}>{prediction.disease.name}</Text>
               <Text style={styles.resultCode}>{prediction.disease.code}</Text>
               <Text style={styles.resultNote}>{getDiseaseAlertMessage(cat!)}</Text>
+              {risk ? (
+                <Text style={styles.resultNote}>Mức rủi ro: {RISK_LABEL[risk] ?? risk}</Text>
+              ) : null}
+              {summary ? <Text style={styles.resultNote}>{summary}</Text> : null}
+              {actions.length > 0 ? (
+                <View style={{ marginTop: 4, gap: 2 }}>
+                  <Text style={styles.kbSectionTitle}>Khuyến nghị xử lý</Text>
+                  {actions.map((action, i) => (
+                    <Text key={i} style={styles.resultNote}>• {action}</Text>
+                  ))}
+                </View>
+              ) : null}
               {/* KB article links */}
               {kbArticles.length > 0 ? (
                 <View style={styles.kbSection}>
@@ -370,6 +414,7 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
           {prediction && !saving && !savedOk ? (
             <Pressable
               onPress={saveResult}
+              disabled={saving}
               style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.8 }]}
             >
               <Text style={styles.primaryBtnText}>Lưu vào hồ sơ cây {treeCode}</Text>
@@ -399,8 +444,9 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
           {predError ? (
             <View style={styles.errBox}>
               <Text style={styles.errText}>{predError}</Text>
+              {/* Upload/AI failures retry with the "Tải ảnh lên & chẩn đoán" button above (photo is kept). */}
               <Pressable onPress={reset} style={styles.ghostBtn}>
-                <Text style={styles.ghostBtnText}>Thử lại</Text>
+                <Text style={styles.ghostBtnText}>Bắt đầu lại</Text>
               </Pressable>
             </View>
           ) : null}
@@ -410,15 +456,7 @@ function AIPanel({ treeId, treeCode, onSaved }: AIPanelProps) {
   );
 }
 
-// ── Recovery Panel ────────────────────────────────────────────────────────────
-
-interface RecoveryPanelProps {
-  treeId: string;
-  treeCode: string;
-  onSaved: () => void;
-}
-
-const RECOVERY_OUTCOME_ELIGIBLE = new Set(["RECOVERED", "IMPROVED"]);
+// ── AI recovery evaluation (advisory only; never blocks a manual status change) ─
 
 const RECOVERY_OUTCOME_LABEL: Record<string, string> = {
   RECOVERED: "Đã hồi phục",
@@ -445,9 +483,9 @@ const RECOVERY_OUTCOME_BG: Record<string, string> = {
 };
 
 const RECOVERY_NEXT_ACTION: Record<string, string> = {
-  RECOVERED: "Có thể xác nhận cây đã hồi phục. Backend vẫn kiểm tra lại điều kiện trước khi cập nhật Tree Map.",
+  RECOVERED: "AI thấy cây đã hồi phục. Bạn có thể cập nhật trạng thái “Đã hồi phục” nếu đồng ý.",
   IMPROVED: "Tiếp tục kế hoạch chăm sóc hiện tại và đặt lịch tái khám tiếp theo nếu cần.",
-  STABLE: "Tiếp tục điều trị/theo dõi. Chưa cho xác nhận hồi phục.",
+  STABLE: "Tiếp tục điều trị/theo dõi và tái khám để có thêm dữ liệu.",
   WORSENED: "Đánh giá lại hướng xử lý, xem lại Knowledge Base hoặc tạo kế hoạch chăm sóc mới.",
   UNCERTAIN: "Chụp/đưa ảnh rõ hơn hoặc kiểm tra thêm trước khi kết luận.",
 };
@@ -456,13 +494,7 @@ function formatPercent(value?: number | null) {
   return value == null ? "—" : `${Math.round(value * 100)}%`;
 }
 
-function RecoveryEvaluationCard({
-  evaluation,
-  eligible,
-}: {
-  evaluation: RecoveryEvaluationResponse;
-  eligible?: boolean;
-}) {
+function RecoveryEvaluationCard({ evaluation }: { evaluation: RecoveryEvaluationResponse }) {
   const color = RECOVERY_OUTCOME_COLOR[evaluation.outcome] ?? RECOVERY_OUTCOME_COLOR.UNCERTAIN;
   const backgroundColor = RECOVERY_OUTCOME_BG[evaluation.outcome] ?? RECOVERY_OUTCOME_BG.UNCERTAIN;
   return (
@@ -471,9 +503,6 @@ function RecoveryEvaluationCard({
         <Text style={[styles.evalOutcome, { color }]}>
           {RECOVERY_OUTCOME_LABEL[evaluation.outcome] ?? evaluation.outcome}
         </Text>
-        {eligible === false ? (
-          <Text style={[styles.evalPill, { color }]}>Không đủ điều kiện RECOVERED</Text>
-        ) : null}
       </View>
       <Text style={styles.evalReason}>{evaluation.reason}</Text>
       <View style={styles.evalCompareRow}>
@@ -491,133 +520,6 @@ function RecoveryEvaluationCard({
       <Text style={styles.evalNextAction}>
         {RECOVERY_NEXT_ACTION[evaluation.outcome] ?? RECOVERY_NEXT_ACTION.UNCERTAIN}
       </Text>
-    </View>
-  );
-}
-
-function RecoveryPanel({ treeId, treeCode, onSaved }: RecoveryPanelProps) {
-  const [expanded, setExpanded] = useState(false);
-  const [notes, setNotes] = useState("");
-  const [evaluating, setEvaluating] = useState(false);
-  const [evaluation, setEvaluation] = useState<RecoveryEvaluationResponse | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [savedOk, setSavedOk] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleExpand() {
-    const next = !expanded;
-    setExpanded(next);
-    if (next && !evaluation) {
-      setEvaluating(true);
-      setError(null);
-      try {
-        const result = await evaluateRecovery(treeId);
-        setEvaluation(result);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Không thể đánh giá phục hồi.");
-      } finally {
-        setEvaluating(false);
-      }
-    }
-  }
-
-  async function confirm() {
-    const trimmed = notes.trim();
-    if (!trimmed) {
-      setError("Vui lòng nhập ghi chú xác nhận phục hồi.");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      await updateTreeHealthStatus(treeId, "RECOVERED");
-      setSavedOk(true);
-      onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Cập nhật trạng thái thất bại.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const eligible = evaluation ? RECOVERY_OUTCOME_ELIGIBLE.has(evaluation.outcome) : false;
-
-  if (savedOk) {
-    return (
-      <View style={[styles.card, styles.recoveryCard]}>
-        <View style={styles.successBox}>
-          <CheckCircle size={18} color="#16a34a" />
-          <Text style={styles.successText}>Xác nhận phục hồi đã lưu cho cây {treeCode}.</Text>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={[styles.card, styles.recoveryCard]}>
-      <Pressable
-        onPress={handleExpand}
-        style={styles.panelHeader}
-        accessibilityRole="button"
-      >
-        <Text style={[styles.cardTitle, { color: "#16a34a" }]}>Xác nhận phục hồi</Text>
-        {expanded ? (
-          <ChevronUp size={16} color="#16a34a" />
-        ) : (
-          <ChevronDown size={16} color="#16a34a" />
-        )}
-      </Pressable>
-
-      {expanded ? (
-        <View style={styles.aiBody}>
-          {evaluating ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator size="small" color="#16a34a" />
-              <Text style={styles.loadingText}>Đang đánh giá tình trạng phục hồi...</Text>
-            </View>
-          ) : evaluation ? (
-            <RecoveryEvaluationCard evaluation={evaluation} eligible={eligible} />
-          ) : null}
-
-          {eligible ? (
-            <>
-              <Text style={styles.recoveryHint}>
-                Xác nhận cây đã phục hồi sau điều trị. Backend sẽ kiểm tra lại evaluateRecovery trước khi cập nhật Tree Map.
-              </Text>
-              <TextInput
-                style={styles.notesInput}
-                placeholder="Ghi chú xác nhận (bắt buộc)..."
-                placeholderTextColor="#9ca3af"
-                multiline
-                numberOfLines={3}
-                value={notes}
-                onChangeText={setNotes}
-              />
-            </>
-          ) : null}
-
-          {error ? (
-            <Text style={styles.errText}>{error}</Text>
-          ) : null}
-
-          {eligible ? (
-            saving ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator size="small" color="#16a34a" />
-                <Text style={styles.loadingText}>Đang lưu...</Text>
-              </View>
-            ) : (
-              <Pressable
-                onPress={confirm}
-                style={({ pressed }) => [styles.recoveryBtn, pressed && { opacity: 0.8 }]}
-              >
-                <CheckCircle size={15} color="#fff" />
-                <Text style={styles.primaryBtnText}>Gửi xác nhận phục hồi</Text>
-              </Pressable>
-            )
-          ) : null}
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -894,54 +796,87 @@ function CarePlanSection({ treeId, diseaseCode, diagnosisId, onSaved }: CarePlan
   );
 }
 
-// ── Treatment Panel (DISEASED → TREATING) ────────────────────────────────────
+// ── Manual health status (any of the five values; AI diagnosis is optional) ───
 
-interface TreatmentPanelProps {
+const HEALTH_OPTIONS: Array<{ value: TreeHealthStatus; label: string }> = [
+  { value: "HEALTHY", label: "Khỏe mạnh" },
+  { value: "SUSPECTED", label: "Nghi ngờ" },
+  { value: "DISEASED", label: "Bệnh" },
+  { value: "TREATING", label: "Đang điều trị" },
+  { value: "RECOVERED", label: "Đã hồi phục" },
+];
+
+interface HealthStatusPickerProps {
   treeId: string;
+  treeCode: string;
+  current?: TreeHealthStatus | null;
   onSaved: () => void;
 }
 
-function TreatmentPanel({ treeId, onSaved }: TreatmentPanelProps) {
+function HealthStatusPicker({ treeId, treeCode, current, onSaved }: HealthStatusPickerProps) {
+  const [choice, setChoice] = useState<TreeHealthStatus | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState<TreeHealthStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef(false);
+  const target = choice ?? current ?? null;
+  const canSave = Boolean(choice) && choice !== current && !saving;
 
-  async function startTreating() {
+  async function save() {
+    if (!choice || choice === current || inFlight.current) return;
+    inFlight.current = true;
     setSaving(true);
     setError(null);
+    setSaved(null);
     try {
-      await updateTreeHealthStatus(treeId, "TREATING");
+      const updated = await updateTreeHealthStatus(treeId, choice);
+      setSaved((updated.healthStatus ?? choice) as TreeHealthStatus);
+      setChoice(null);
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Cập nhật thất bại.");
+      setError(treeFailureMessage(err, "Cập nhật trạng thái thất bại."));
     } finally {
+      inFlight.current = false;
       setSaving(false);
     }
   }
 
   return (
-    <View style={[styles.card, { borderColor: "#fed7aa" }]}>
-      <Text style={[styles.cardTitle, { color: "#ea580c" }]}>Bắt đầu điều trị</Text>
-      <Text style={[styles.recoveryHint]}>
-        Xác nhận bạn đã bắt đầu điều trị cho cây này. Trạng thái sẽ chuyển sang "Đang điều trị".
-      </Text>
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>Cập nhật trạng thái sức khỏe</Text>
+      <View style={styles.statusOptions} accessibilityRole="radiogroup">
+        {HEALTH_OPTIONS.map((option) => {
+          const selected = target === option.value;
+          return (
+            <Pressable
+              key={option.value}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: selected, disabled: saving }}
+              disabled={saving}
+              onPress={() => { setChoice(option.value); setSaved(null); setError(null); }}
+              style={[styles.statusOption, selected && styles.statusOptionSelected]}
+            >
+              <Text style={[styles.statusOptionText, selected && styles.statusOptionTextSelected]}>
+                {option.label}{option.value === current ? " (hiện tại)" : ""}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
       {error ? <Text style={styles.errText}>{error}</Text> : null}
-      {saving ? (
-        <View style={styles.loadingRow}>
-          <ActivityIndicator size="small" color="#ea580c" />
-          <Text style={styles.loadingText}>Đang cập nhật...</Text>
-        </View>
-      ) : (
-        <Pressable
-          onPress={startTreating}
-          style={({ pressed }) => [
-            styles.primaryBtn,
-            { backgroundColor: "#ea580c" },
-            pressed && { opacity: 0.8 },
-          ]}
-        >
-          <Text style={styles.primaryBtnText}>Bắt đầu điều trị</Text>
-        </Pressable>
-      )}
+      {saved ? (
+        <Text style={styles.statusSaved}>
+          Đã lưu: cây {treeCode} chuyển sang {HEALTH_OPTIONS.find((o) => o.value === saved)?.label ?? saved}.
+        </Text>
+      ) : null}
+      <Pressable
+        onPress={() => void save()}
+        disabled={!canSave}
+        style={({ pressed }) => [styles.primaryBtn, !canSave && { opacity: 0.5 }, pressed && { opacity: 0.8 }]}
+      >
+        {saving ? <ActivityIndicator size="small" color="#fff" /> : null}
+        <Text style={styles.primaryBtnText}>{saving ? "Đang lưu..." : "Lưu trạng thái"}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -1067,11 +1002,13 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved, onYieldSa
     useState<RecoveryEvaluationResponse | null>(null);
   const [progressLoading, setProgressLoading] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   function load(active: { value: boolean }) {
     setLoading(true);
+    setError(null);
     Promise.all([getTree(treeId), listDiagnoses(treeId, 0, 20)])
       .then(([treeData, diagData]) => {
         if (!active.value) return;
@@ -1123,37 +1060,26 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved, onYieldSa
     onDiagnosisSaved?.();
   }
 
-  function confirmRemoveTree() {
-    if (!tree) return;
-    Alert.alert(
-      "Đã đốn cây?",
-      `Cây ${tree.treeCode} sẽ được xóa khỏi bản đồ và danh sách cây đang hoạt động. Lịch sử chẩn đoán/kế hoạch chăm sóc vẫn được giữ lại.`,
-      [
-        { text: "Hủy", style: "cancel" },
-        {
-          text: "Đã đốn cây",
-          style: "destructive",
-          onPress: async () => {
-            setRemoving(true);
-            setError(null);
-            try {
-              await removeTree(treeId);
-              onRemoved?.();
-              onClose?.();
-            } catch (err) {
-              setError(treeFailureMessage(err, "Không thể xóa cây khỏi bản đồ. Vui lòng kiểm tra kết nối."));
-            } finally {
-              setRemoving(false);
-            }
-          },
-        },
-      ],
-    );
+  // In-app ConfirmModal, not Alert.alert: on Expo web a multi-button Alert is a no-op, so the
+  // "Đã đốn cây" button silently did nothing.
+  async function removeConfirmedTree() {
+    setRemoving(true);
+    setError(null);
+    try {
+      await removeTree(treeId);
+      setConfirmingRemove(false);
+      onRemoved?.();
+      onClose?.();
+    } catch (err) {
+      setConfirmingRemove(false);
+      setError(treeFailureMessage(err, "Không thể xóa cây khỏi bản đồ. Vui lòng kiểm tra kết nối."));
+    } finally {
+      setRemoving(false);
+    }
   }
 
+
   const health = tree?.healthStatus;
-  const needsRecovery = health === "TREATING";
-  const needsTreatment = health === "DISEASED" || health === "SUSPECTED";
   const needsCarePlan =
     health === "DISEASED" || health === "TREATING" || health === "SUSPECTED";
 
@@ -1169,6 +1095,10 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved, onYieldSa
     return (
       <View style={styles.errorBox}>
         <Text style={styles.errorText}>{error}</Text>
+        <Pressable onPress={() => load({ value: true })} style={styles.ghostBtn} accessibilityRole="button">
+          <RefreshCcw size={13} color={durianTheme.colors.moss} />
+          <Text style={styles.ghostBtnText}>Thử lại</Text>
+        </Pressable>
       </View>
     );
   }
@@ -1202,7 +1132,7 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved, onYieldSa
       {tree.status !== "REMOVED" ? (
         <Pressable
           accessibilityRole="button"
-          onPress={confirmRemoveTree}
+          onPress={() => setConfirmingRemove(true)}
           disabled={removing}
           style={({ pressed }) => [
             styles.removeTreeBtn,
@@ -1223,14 +1153,9 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved, onYieldSa
         </View>
       )}
 
-      {/* Start treatment button — for DISEASED or SUSPECTED trees */}
-      {needsTreatment ? (
-        <TreatmentPanel treeId={treeId} onSaved={refresh} />
-      ) : null}
-
-      {/* Recovery confirmation panel — only for trees being treated */}
-      {needsRecovery ? (
-        <RecoveryPanel treeId={treeId} treeCode={tree.treeCode} onSaved={refresh} />
+      {/* Manual health status — any of the five values, no AI prerequisite */}
+      {tree.status !== "REMOVED" ? (
+        <HealthStatusPicker treeId={treeId} treeCode={tree.treeCode} current={health} onSaved={refresh} />
       ) : null}
 
       {/* Care plan section — for sick/suspected/treating trees */}
@@ -1330,6 +1255,16 @@ export function TreeDetailContent({ treeId, onClose, onDiagnosisSaved, onYieldSa
           </View>
         )}
       </View>
+      <ConfirmModal
+        visible={confirmingRemove}
+        title={`Đã đốn cây ${tree.treeCode}?`}
+        message="Cây sẽ được xóa khỏi bản đồ và danh sách cây đang hoạt động. Lịch sử chẩn đoán/kế hoạch chăm sóc vẫn được giữ lại."
+        confirmLabel="Đã đốn cây"
+        tone="danger"
+        busy={removing}
+        onCancel={() => setConfirmingRemove(false)}
+        onConfirm={() => void removeConfirmedTree()}
+      />
     </ScrollView>
   );
 }
@@ -1341,8 +1276,16 @@ interface Props {
 }
 
 export function TreeDetailScreen({ treeId }: Props) {
+  const router = useRouter();
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => (router.canGoBack() ? router.back() : router.replace("/(main)/farms"))}
+        style={styles.backRow}
+      >
+        <Text style={styles.backRowText}>← Quay lại</Text>
+      </Pressable>
       <DurianScreenHeader
         eyebrow="CHI TIẾT CÂY"
         icon={Leaf}
@@ -1357,7 +1300,15 @@ export function TreeDetailScreen({ treeId }: Props) {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  statusOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 8 },
+  statusOption: { borderColor: "#d1d5db", borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
+  statusOptionSelected: { backgroundColor: durianTheme.colors.moss, borderColor: durianTheme.colors.moss },
+  statusOptionText: { color: "#374151", fontSize: 13, fontWeight: "700" },
+  statusOptionTextSelected: { color: "#fff" },
+  statusSaved: { color: "#15803d", fontSize: 13, fontWeight: "600", marginBottom: 6 },
   container: { flex: 1, backgroundColor: durianTheme.colors.canvas },
+  backRow: { paddingHorizontal: 16, paddingTop: 8 },
+  backRowText: { fontSize: 14, fontWeight: "700", color: durianTheme.colors.moss },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
   scrollContent: { padding: 16, gap: 12, paddingBottom: 40 },
 
