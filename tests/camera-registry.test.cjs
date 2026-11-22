@@ -10,7 +10,9 @@ test("camera screen polls authorized registry, ignores obsolete responses and cl
   assert.ok(source.includes("generation !== requestGeneration.current"));
   assert.ok(source.includes("deviceId}:${endpointVersion}:${previewKey}"));
   assert.ok(source.includes("onLoad={() => setSnapshotError(false)}"));
-  assert.doesNotMatch(source,/const DEVICE_ID|192\.168\./);
+  assert.doesNotMatch(source,/const DEVICE_ID|192\.168\.|updateCameraConfig|camera_url|ip_address/);
+  // capture-now may be a queued command the camera fulfils by pushing the frame.
+  assert.ok(source.includes("waitForCameraCommand("));
 });
 test("snapshot image and connection probe use authenticated Gateway API and reject HTTP failure", () => {
   const source = readFileSync(join(__dirname,"../src/lib/iotApi.ts"),"utf8");

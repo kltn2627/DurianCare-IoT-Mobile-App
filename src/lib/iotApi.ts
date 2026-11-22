@@ -125,11 +125,47 @@ export async function fetchSensorHistory(params: {
 
 // ── Camera API ────────────────────────────────────────────────────────────────
 
-export async function captureNow(deviceId: string): Promise<CameraCapture> {
-  return iotFetch<CameraCapture>(
+export type CameraCommand = {
+  id: string;
+  commandId?: string;
+  cameraId: string;
+  reason: "ON_DEMAND" | "SCHEDULED";
+  status: "PENDING" | "DELIVERED" | "COMPLETED" | "FAILED" | "EXPIRED";
+  expiresAt: string;
+  error: string | null;
+  capture: CameraCapture | null;
+};
+
+/** 201 = finished legacy LAN capture; 202 = queued command the camera fulfils by uploading the frame. */
+export type CaptureNowResult =
+  | { kind: "capture"; capture: CameraCapture }
+  | { kind: "queued"; command: CameraCommand };
+
+export async function captureNow(deviceId: string): Promise<CaptureNowResult> {
+  const payload = await iotFetch<Record<string, unknown>>(
     `/api/v1/camera/capture-now?device_id=${encodeURIComponent(deviceId)}`,
     { method: "POST", body: JSON.stringify({ device_id: deviceId }) }
   );
+  if (typeof payload?.commandId === "string") return { kind: "queued", command: payload as unknown as CameraCommand };
+  return { kind: "capture", capture: payload as unknown as CameraCapture };
+}
+
+export async function getCameraCommand(deviceId: string, commandId: string): Promise<CameraCommand> {
+  return iotFetch<CameraCommand>(
+    `/api/v1/camera/commands/${encodeURIComponent(commandId)}?device_id=${encodeURIComponent(deviceId)}`
+  );
+}
+
+/** Follows a queued capture until it completes, fails or expires. */
+export async function waitForCameraCommand(deviceId: string, commandId: string,
+  options: { intervalMs?: number; timeoutMs?: number; isCancelled?: () => boolean } = {}): Promise<CameraCommand> {
+  const deadline = Date.now() + (options.timeoutMs ?? 150_000);
+  for (;;) {
+    const command = await getCameraCommand(deviceId, commandId);
+    if (["COMPLETED", "FAILED", "EXPIRED"].includes(command.status)) return command;
+    if (options.isCancelled?.() || Date.now() >= deadline) return { ...command, status: "EXPIRED" };
+    await new Promise((resolve) => setTimeout(resolve, options.intervalMs ?? 2_000));
+  }
 }
 
 export async function fetchCameraHistory(params: {
@@ -151,9 +187,17 @@ export function getSnapshotUrl(deviceId: string): string {
 
 // ── Camera Device Registry ────────────────────────────────────────────────────
 
+/**
+ * Camera as returned by the backend. The camera's LAN address is not sent to farmers: the app only uses
+ * backend URLs (snapshot = latest frame the camera uploaded, stored images), never the camera itself.
+ */
 export type CameraDevice = {
-  /** DEGRADED: heartbeat is fresh but the camera's own frame-grab self-test failed. */
+  /** DEGRADED: fresh heartbeat but the self-test failed, the Wi-Fi link is weak or captures keep failing. */
   status: "ONLINE" | "DEGRADED" | "OFFLINE" | "UNKNOWN";
+  statusReasons?: string[];
+  deliveryMode?: "PUSH" | "PULL";
+  lastFrameAt?: string | null;
+  wifiRssi?: number | null;
   previewAvailable?: boolean;
   cameraReady?: boolean | null;
   lastError?: string | null;
@@ -162,14 +206,9 @@ export type CameraDevice = {
   snapshotUrl: string;
   id:               string;
   device_id:        string;
-  mac_address:      string | null;
-  ip_address:       string;
-  port:             number;
-  protocol:         "http" | "https";
   online:           boolean;
   last_seen:        string | null;
   firmware_version: string | null;
-  ssid:             string | null;
   tree_id:          string | null;
   zone_id:          string | null;
   farm_id:          string | null;
@@ -186,16 +225,6 @@ export async function getCameraDevice(deviceId: string): Promise<{ device: Camer
   return iotFetch<{ device: CameraDevice }>(
     `/api/v1/camera/devices/${encodeURIComponent(deviceId)}`
   );
-}
-
-export async function updateCameraConfig(params: {
-  device_id: string;
-  camera_url: string;
-}): Promise<{ device: CameraDevice; camera_url: string }> {
-  return iotFetch<{ device: CameraDevice; camera_url: string }>("/api/v1/camera/config", {
-    method: "POST",
-    body:   JSON.stringify(params),
-  });
 }
 
 export async function pingCamera(deviceId: string): Promise<boolean> {

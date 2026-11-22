@@ -3,7 +3,6 @@ import {
   Brain,
   Camera,
   CheckCircle2,
-  CheckCircle,
   Clock,
   Leaf,
   Loader2,
@@ -11,10 +10,9 @@ import {
   Settings,
   ShieldAlert,
   X,
-  XCircle,
 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useFocusEffect } from "expo-router";
+import { type Href, useFocusEffect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
@@ -24,7 +22,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -34,11 +31,9 @@ import { durianTheme } from "@/src/theme/durianTheme";
 import {
   captureNow,
   fetchCameraHistory,
-  getCameraDevice,
   listCameraDevices,
   cameraSnapshotSource,
-  pingCamera,
-  updateCameraConfig,
+  waitForCameraCommand,
   type CameraCapture,
   type CameraDevice,
 } from "@/src/lib/iotApi";
@@ -219,150 +214,6 @@ function DiagnosisModal({
   );
 }
 
-function CameraConfigModal({
-  deviceId,
-  visible,
-  onClose,
-  onSaved,
-}: {
-  deviceId: string;
-  visible: boolean;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [url, setUrl]           = useState("");
-  const [saving, setSaving]     = useState(false);
-  const [pinging, setPinging]   = useState(false);
-  const [pingResult, setPingResult] = useState<"ok" | "fail" | null>(null);
-  const [saveError, setSaveError]   = useState<string | null>(null);
-  const [saved, setSaved]           = useState(false);
-
-  function reset() {
-    setUrl("");
-    setSaving(false);
-    setPinging(false);
-    setPingResult(null);
-    setSaveError(null);
-    setSaved(false);
-  }
-
-  async function handlePing() {
-    setPinging(true);
-    setPingResult(null);
-    const ok = await pingCamera(deviceId);
-    setPingResult(ok ? "ok" : "fail");
-    setPinging(false);
-  }
-
-  async function handleSave() {
-    if (!url.trim()) {
-      setSaveError("Vui lòng nhập URL camera.");
-      return;
-    }
-    setSaving(true);
-    setSaveError(null);
-    try {
-      await updateCameraConfig({ device_id: deviceId, camera_url: url.trim() });
-      setSaved(true);
-      onSaved();
-      setTimeout(() => { reset(); onClose(); }, 1200);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Cập nhật thất bại.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      onRequestClose={() => { reset(); onClose(); }}
-      transparent
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalSheet}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Cấu hình Camera</Text>
-            <Pressable onPress={() => { reset(); onClose(); }} hitSlop={8}>
-              <X color={durianTheme.colors.muted} size={20} />
-            </Pressable>
-          </View>
-
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, gap: 14 }}>
-            <Text style={styles.configLabel}>
-              Nhập URL mới của ESP32-CAM khi đổi mạng Wi-Fi.{"\n"}
-              Ví dụ: <Text style={{ fontFamily: "monospace", color: durianTheme.colors.moss }}>http://camera.local</Text>
-            </Text>
-
-            <View style={styles.configInputRow}>
-              <TextInput
-                value={url}
-                onChangeText={(t) => { setUrl(t); setPingResult(null); setSaveError(null); }}
-                placeholder="http://camera.local"
-                placeholderTextColor={durianTheme.colors.mist}
-                style={styles.configInput}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-              />
-            </View>
-
-            <Pressable
-              onPress={handlePing}
-              disabled={pinging || !url.trim()}
-              style={[styles.pingBtn, (!url.trim() || pinging) && styles.disabled]}
-            >
-              {pinging
-                ? <><Loader2 color={durianTheme.colors.moss} size={14} /><Text style={styles.pingBtnText}>Đang kiểm tra...</Text></>
-                : <Text style={styles.pingBtnText}>Kiểm tra kết nối</Text>
-              }
-            </Pressable>
-
-            {pingResult === "ok" && (
-              <View style={styles.pingOk}>
-                <CheckCircle color="#16a34a" size={14} />
-                <Text style={{ color: "#15803d", fontSize: 12, fontWeight: "700" }}>Camera phản hồi — kết nối tốt!</Text>
-              </View>
-            )}
-            {pingResult === "fail" && (
-              <View style={styles.pingFail}>
-                <XCircle color="#dc2626" size={14} />
-                <Text style={{ color: "#991b1b", fontSize: 12, fontWeight: "700" }}>Không phản hồi — kiểm tra URL hoặc mạng.</Text>
-              </View>
-            )}
-
-            {saveError != null && (
-              <View style={styles.pingFail}>
-                <AlertCircle color="#dc2626" size={14} />
-                <Text style={{ color: "#991b1b", fontSize: 12 }}>{saveError}</Text>
-              </View>
-            )}
-
-            {saved && (
-              <View style={styles.pingOk}>
-                <CheckCircle color="#16a34a" size={14} />
-                <Text style={{ color: "#15803d", fontSize: 12, fontWeight: "700" }}>Đã lưu! Camera sẽ dùng IP mới ngay lập tức.</Text>
-              </View>
-            )}
-
-            <Pressable
-              onPress={handleSave}
-              disabled={saving || !url.trim()}
-              style={[styles.saveBtn, (saving || !url.trim()) && styles.disabled]}
-            >
-              {saving
-                ? <><Loader2 color="#fff" size={14} /><Text style={styles.saveBtnText}>Đang lưu...</Text></>
-                : <Text style={styles.saveBtnText}>Lưu cấu hình</Text>
-              }
-            </Pressable>
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export function CameraMonitorScreen() {
@@ -396,7 +247,7 @@ export function CameraMonitorScreen() {
   useEffect(() => { setDeviceInfo(devices.find(row => row.device_id === deviceId) ?? null); }, [deviceId, devices]);
   const statusView = cameraStatusView(deviceInfo);
 
-  const [configVisible, setConfigVisible] = useState(false);
+  const router = useRouter();
 
   const [captureStep, setCaptureStep]     = useState<"idle" | "capturing" | "analyzing">("idle");
   const [captureResult, setCaptureResult] = useState<CameraCapture | null>(null);
@@ -443,8 +294,23 @@ export function CameraMonitorScreen() {
     setCaptureError(null);
     stepTimerRef.current = setTimeout(() => setCaptureStep("analyzing"), 2_000);
     try {
-      const cap = await captureNow(deviceId);
-      if (generation !== requestGeneration.current) return;
+      const result = await captureNow(deviceId);
+      let cap = result.kind === "capture" ? result.capture : null;
+      if (result.kind === "queued") {
+        // The camera picks the command up within ~5 s and uploads the photo; follow it until it arrives.
+        const command = await waitForCameraCommand(deviceId, result.command.id,
+          { isCancelled: () => generation !== requestGeneration.current });
+        if (generation !== requestGeneration.current) return;
+        if (command.status !== "COMPLETED" || !command.capture) {
+          setCaptureError(command.status === "FAILED"
+            ? `Camera không chụp được ảnh (${command.error ?? "lỗi không rõ"}).`
+            : "Camera chưa gửi ảnh trong thời gian chờ (Wi-Fi yếu hoặc camera bận). Thử lại sau.");
+          return;
+        }
+        cap = command.capture;
+        setPreviewKey(Date.now());
+      }
+      if (generation !== requestGeneration.current || !cap) return;
       setCaptureResult(cap);
       setEnlarged(cap);
       void loadHistory();
@@ -495,7 +361,8 @@ export function CameraMonitorScreen() {
                   </Text>
                 </View>
               )}
-              <Pressable onPress={() => setConfigVisible(true)} hitSlop={8} style={styles.gearBtn}>
+              <Pressable onPress={() => router.push("/device-setup" as Href)} hitSlop={8} style={styles.gearBtn}
+                accessibilityLabel="Hướng dẫn kết nối thiết bị">
                 <Settings color={durianTheme.colors.muted} size={16} />
               </Pressable>
             </View>
@@ -513,7 +380,7 @@ export function CameraMonitorScreen() {
                 </Text>
               </View>
             )}
-            {!isCapturing && deviceId && deviceInfo?.status === "ONLINE" && (
+            {!isCapturing && deviceId && statusView.canPreview && (
               <Image
                 key={`${deviceId}:${endpointVersion}:${previewKey}`}
                 source={cameraSnapshotSource(deviceId, endpointVersion, previewKey, deviceInfo?.snapshotUrl)}
@@ -526,7 +393,7 @@ export function CameraMonitorScreen() {
             {snapshotError && !isCapturing && (
               <View style={styles.previewError}>
                 <Camera color={durianTheme.colors.mist} size={36} />
-                <Text style={styles.previewErrorText}>Không kết nối được ESP32-CAM</Text>
+                <Text style={styles.previewErrorText}>Chưa có ảnh mới từ camera. Bấm “Chụp hình ngay” hoặc chờ lịch chụp.</Text>
               </View>
             )}
           </View>
@@ -534,7 +401,7 @@ export function CameraMonitorScreen() {
           {/* Capture button */}
           <Pressable
             onPress={handleCapture}
-            disabled={isCapturing || !deviceId || deviceInfo?.status !== "ONLINE"}
+            disabled={isCapturing || !deviceId || !statusView.canCapture}
             style={({ pressed }) => [styles.captureBtn, pressed && styles.pressed, isCapturing && styles.disabled]}
           >
             {isCapturing
@@ -612,15 +479,6 @@ export function CameraMonitorScreen() {
 
       <DiagnosisModal capture={enlarged} onClose={() => setEnlarged(null)} />
 
-      <CameraConfigModal
-        deviceId={deviceId}
-        visible={configVisible}
-        onClose={() => setConfigVisible(false)}
-        onSaved={() => {
-          setPreviewKey(Date.now());
-          void getCameraDevice(deviceId).then((r) => setDeviceInfo(r.device)).catch(() => {});
-        }}
-      />
     </SafeAreaView>
   );
 }
@@ -689,13 +547,4 @@ const styles = StyleSheet.create({
 
   // Camera config modal
   gearBtn:         { padding: 4 },
-  configLabel:     { color: durianTheme.colors.muted, fontSize: 12, lineHeight: 18 },
-  configInputRow:  { borderColor: "#ECE8D8", borderRadius: 12, borderWidth: 1, overflow: "hidden" },
-  configInput:     { color: durianTheme.colors.ink, fontSize: 13, padding: 12 },
-  pingBtn:         { alignItems: "center", borderColor: durianTheme.colors.moss, borderRadius: 12, borderWidth: 1.5, flexDirection: "row", gap: 6, justifyContent: "center", paddingVertical: 10 },
-  pingBtnText:     { color: durianTheme.colors.moss, fontSize: 13, fontWeight: "700" },
-  pingOk:          { alignItems: "center", backgroundColor: "#f0fdf4", borderRadius: 10, flexDirection: "row", gap: 8, padding: 10 },
-  pingFail:        { alignItems: "center", backgroundColor: "#fef2f2", borderRadius: 10, flexDirection: "row", gap: 8, padding: 10 },
-  saveBtn:         { alignItems: "center", backgroundColor: durianTheme.colors.moss, borderRadius: 14, flexDirection: "row", gap: 8, justifyContent: "center", paddingVertical: 13 },
-  saveBtnText:     { color: "#fff", fontSize: 14, fontWeight: "800" },
 });

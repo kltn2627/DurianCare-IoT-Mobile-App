@@ -16,6 +16,14 @@ const { cameraStatusView } = load("src/features/camera/cameraStatus.ts");
 const { soilMoistureText, soilSensorNote } = load("src/features/iot/soil.ts");
 const { notificationSource, notificationTypeLabel } = load("src/features/notification/presentation.ts");
 
+test("camera: degraded only by weak Wi-Fi still previews and captures", () => {
+  const weak = cameraStatusView({ status: "DEGRADED", statusReasons: ["WIFI_WEAK"], previewAvailable: true, cameraReady: true });
+  assert.equal(weak.canPreview, true);
+  assert.equal(weak.canCapture, true);
+  const broken = cameraStatusView({ status: "DEGRADED", lastError: "CAMERA_INIT_FAILED", previewAvailable: false, cameraReady: false });
+  assert.equal(broken.canCapture, false);
+});
+
 test("camera: only ONLINE previews; DEGRADED / OFFLINE explain why", () => {
   assert.equal(cameraStatusView({ status: "ONLINE" }).canPreview, true);
   const degraded = cameraStatusView({ status: "DEGRADED", lastError: "CAMERA_STREAM_FAILED" });

@@ -93,6 +93,7 @@ export default function DurianCareMainTabs() {
       <Tabs.Screen name="chat" options={{ href: null }} />
       <Tabs.Screen name="community" options={{ href: null }} />
       <Tabs.Screen name="camera" options={{ href: null }} />
+      <Tabs.Screen name="device-setup" options={{ href: null }} />
       <Tabs.Screen name="export-compliance" options={{ href: null }} />
       <Tabs.Screen name="knowledge" options={{ href: null }} />
       <Tabs.Screen name="notifications" options={{ href: null }} />
