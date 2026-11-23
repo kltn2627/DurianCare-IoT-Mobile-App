@@ -243,6 +243,24 @@ export async function pingCamera(deviceId: string): Promise<boolean> {
   }
 }
 
+/**
+ * Opens or renews the camera's live session (firmware >= 3.1.0): while it is open the camera streams small
+ * frames to the backend and the snapshot endpoint returns the newest one, so refreshing the snapshot quickly
+ * gives a real-time view. Call again before `renewAfterMs`. `supported: false` = older firmware (HTTP 409).
+ */
+export async function startCameraLive(deviceId: string): Promise<{ supported: boolean; renewAfterMs: number }> {
+  const tokens = getCachedAuthTokens();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (tokens?.accessToken) headers["Authorization"] = `Bearer ${tokens.accessToken}`;
+  const res = await fetch(`${getApiBaseUrl()}/api/v1/camera/live/start?device_id=${encodeURIComponent(deviceId)}`,
+    { method: "POST", headers, signal: AbortSignal.timeout(8_000) });
+  if (res.status === 409) return { supported: false, renewAfterMs: 0 };
+  if (!res.ok) throw new Error(`Live view unavailable (${res.status})`);
+  const body = (await res.json().catch(() => null)) as { renewAfterMs?: unknown } | null;
+  const renew = Number(body?.renewAfterMs);
+  return { supported: true, renewAfterMs: Number.isFinite(renew) && renew >= 5_000 ? renew : 15_000 };
+}
+
 export function cameraSnapshotSource(deviceId: string, version: string, tick: number, snapshotPath?: string): { uri: string; headers: Record<string, string> } {
   const tokens = getCachedAuthTokens();
   const expectedPath = `/api/v1/camera/snapshot?device_id=${encodeURIComponent(deviceId)}`;

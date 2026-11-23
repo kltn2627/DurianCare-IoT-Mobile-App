@@ -33,6 +33,7 @@ import {
   fetchCameraHistory,
   listCameraDevices,
   cameraSnapshotSource,
+  startCameraLive,
   waitForCameraCommand,
   type CameraCapture,
   type CameraDevice,
@@ -42,6 +43,9 @@ import { CAMERA_TONE_COLORS, cameraStatusView } from "./cameraStatus";
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const PREVIEW_POLL = 8_000;
+// Live view: the camera streams while the session is renewed; the newest frame is fetched this often.
+const LIVE_FRAME_POLL = 350;
+const LIVE_LOAD_TIMEOUT = 5_000;  // a frame request that never settles must not freeze the live view
 
 const DISEASE_NAMES: Record<string, string> = {
   ALGAL_LEAF_SPOT:     "Đốm rong tảo",
@@ -221,8 +225,13 @@ export function CameraMonitorScreen() {
   const [devices, setDevices] = useState<CameraDevice[]>([]);
   const [registryError, setRegistryError] = useState<string | null>(null);
   const requestGeneration = useRef(0);
-  const [previewKey, setPreviewKey] = useState(Date.now());
+  // Two image slots: the next frame loads hidden and replaces the visible one only once it has loaded,
+  // so fast refreshes never flash an empty box.
+  const [slots, setSlots] = useState<{ a: number; b: number; front: "a" | "b" }>({ a: Date.now(), b: 0, front: "a" });
+  const loadingSince = useRef<number | null>(null);
   const [snapshotError, setSnapshotError] = useState(false);
+  const [liveOn, setLiveOn] = useState(false);
+  const [liveFrameAt, setLiveFrameAt] = useState<number | null>(null);
 
   // Device status from camera registry (online/offline indicator)
   const [deviceInfo, setDeviceInfo] = useState<CameraDevice | null>(null);
@@ -264,14 +273,59 @@ export function CameraMonitorScreen() {
 
   const endpointVersion = deviceInfo?.endpointVersion ?? "";
 
-  // Poll snapshots only while the screen is focused.
+  // Load the next frame into the hidden slot (skipped while one is still loading).
+  const nextFrame = useCallback(() => {
+    const started = loadingSince.current;
+    if (started !== null && Date.now() - started < LIVE_LOAD_TIMEOUT) return;
+    loadingSince.current = Date.now();
+    setSlots(s => s.front === "a" ? { ...s, b: Date.now() } : { ...s, a: Date.now() });
+  }, []);
+  const onSlotLoad = (slot: "a" | "b") => {
+    loadingSince.current = null;
+    setSnapshotError(false);
+    setLiveFrameAt(Date.now());
+    setSlots(s => s.front === slot ? s : { ...s, front: slot });
+  };
+  const onSlotError = (slot: "a" | "b") => {
+    loadingSince.current = null;
+    // A failed refresh keeps the last good frame; only an empty box shows the error.
+    if (slot === slots.front) setSnapshotError(true);
+  };
+
+  // Live session (firmware >= 3.1.0): renewed while this screen is focused, so the camera stops streaming
+  // shortly after the user leaves. Older firmware keeps the 8 s refresh.
+  const liveCapable = deviceInfo?.deliveryMode === "PUSH" && (deviceInfo?.capabilities ?? []).includes("live")
+    && statusView.canPreview && captureStep === "idle";
+  useFocusEffect(useCallback(() => {
+    if (!liveCapable || !deviceId) { setLiveOn(false); return; }
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const renew = async () => {
+      try {
+        const live = await startCameraLive(deviceId);
+        if (!active) return;
+        setLiveOn(live.supported);
+        if (live.supported) timer = setTimeout(() => void renew(), live.renewAfterMs);
+      } catch {
+        if (!active) return;
+        setLiveOn(false);
+        timer = setTimeout(() => void renew(), 10_000);
+      }
+    };
+    void renew();
+    return () => { active = false; if (timer) clearTimeout(timer); setLiveOn(false); };
+  }, [liveCapable, deviceId]));
+
+  // Poll snapshots only while the screen is focused: fast during a live session, every 8 s otherwise.
   useFocusEffect(useCallback(() => {
     setSnapshotError(false);
     requestGeneration.current += 1;
-    setPreviewKey(Date.now());
-    const id = setInterval(() => setPreviewKey(Date.now()), PREVIEW_POLL);
-    return () => { requestGeneration.current += 1; clearInterval(id); };
-  }, [deviceId, endpointVersion]));
+    loadingSince.current = null;
+    nextFrame();
+    const timer = setInterval(nextFrame, liveOn ? LIVE_FRAME_POLL : PREVIEW_POLL);
+    return () => { requestGeneration.current += 1; clearInterval(timer); };
+  }, [deviceId, endpointVersion, liveOn, nextFrame]));
+  const liveFresh = liveOn && liveFrameAt !== null && Date.now() - liveFrameAt < 5_000;
 
   const loadHistory = useCallback(async () => {
     const generation = requestGeneration.current;
@@ -308,7 +362,7 @@ export function CameraMonitorScreen() {
           return;
         }
         cap = command.capture;
-        setPreviewKey(Date.now());
+        nextFrame();
       }
       if (generation !== requestGeneration.current || !cap) return;
       setCaptureResult(cap);
@@ -344,8 +398,16 @@ export function CameraMonitorScreen() {
         {/* Snapshot preview */}
         <View style={styles.previewCard}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-            <Text style={styles.cardLabel}>Ảnh camera định kỳ · {deviceId || "Chưa có camera"}</Text>
+            <Text style={styles.cardLabel}>
+              {liveFresh ? "Camera trực tiếp" : "Ảnh camera định kỳ"} · {deviceId || "Chưa có camera"}
+            </Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {liveFresh && (
+                <View style={styles.liveBadge}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveText}>Trực tiếp</Text>
+                </View>
+              )}
               {deviceInfo != null && (
                 <View style={{
                   flexDirection: "row", alignItems: "center", gap: 5,
@@ -380,16 +442,21 @@ export function CameraMonitorScreen() {
                 </Text>
               </View>
             )}
-            {!isCapturing && deviceId && statusView.canPreview && (
-              <Image
-                key={`${deviceId}:${endpointVersion}:${previewKey}`}
-                source={cameraSnapshotSource(deviceId, endpointVersion, previewKey, deviceInfo?.snapshotUrl)}
-                style={styles.previewImg}
-                resizeMode="cover"
-                onError={() => setSnapshotError(true)}
-                onLoad={() => setSnapshotError(false)}
-              />
-            )}
+            {!isCapturing && deviceId && statusView.canPreview && (["a", "b"] as const).map(slot => {
+              const previewKey = slots[slot];
+              if (!previewKey) return null;
+              return (
+                <Image
+                  key={`${slot}:${deviceId}:${endpointVersion}:${previewKey}`}
+                  source={cameraSnapshotSource(deviceId, endpointVersion, previewKey, deviceInfo?.snapshotUrl)}
+                  style={[styles.previewImg, styles.previewSlot, { opacity: slots.front === slot ? 1 : 0 }]}
+                  resizeMode="cover"
+                  fadeDuration={0}
+                  onError={() => onSlotError(slot)}
+                  onLoad={() => onSlotLoad(slot)}
+                />
+              );
+            })}
             {snapshotError && !isCapturing && (
               <View style={styles.previewError}>
                 <Camera color={durianTheme.colors.mist} size={36} />
@@ -493,6 +560,11 @@ const styles = StyleSheet.create({
   previewCard:     { backgroundColor: durianTheme.colors.surface, borderColor: "#ECE8D8", borderRadius: 22, borderWidth: 1, gap: 12, padding: 16 },
   previewBox:      { aspectRatio: 1.4, backgroundColor: "#000", borderRadius: 16, overflow: "hidden", position: "relative" },
   previewImg:      { height: "100%", width: "100%" },
+  previewSlot:     { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
+  liveBadge:       { alignItems: "center", backgroundColor: "#fdecec", borderRadius: 99, flexDirection: "row", gap: 5,
+                     paddingHorizontal: 8, paddingVertical: 3 },
+  liveDot:         { backgroundColor: "#d64545", borderRadius: 3, height: 6, width: 6 },
+  liveText:        { color: "#b33a3a", fontSize: 10, fontWeight: "700" },
   previewError:    { alignItems: "center", flex: 1, gap: 10, justifyContent: "center" },
   previewErrorText:{ color: durianTheme.colors.mist, fontSize: 12, textAlign: "center" },
 

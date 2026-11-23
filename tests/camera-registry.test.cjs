@@ -9,7 +9,13 @@ test("camera screen polls authorized registry, ignores obsolete responses and cl
   assert.ok(source.includes("clearInterval(timer)"));
   assert.ok(source.includes("generation !== requestGeneration.current"));
   assert.ok(source.includes("deviceId}:${endpointVersion}:${previewKey}"));
-  assert.ok(source.includes("onLoad={() => setSnapshotError(false)}"));
+  // Two image slots: a refresh never blanks the visible frame; only an empty box shows the error.
+  assert.ok(source.includes("onLoad={() => onSlotLoad(slot)}"));
+  assert.ok(source.includes("setSnapshotError(false)"));
+  // Live view (firmware >= 3.1.0): renewed only while focused, fast refresh only during the session.
+  assert.ok(source.includes("startCameraLive(deviceId)"));
+  assert.ok(source.includes("liveOn ? LIVE_FRAME_POLL : PREVIEW_POLL"));
+  assert.ok(source.includes('(deviceInfo?.capabilities ?? []).includes("live")'));
   assert.doesNotMatch(source,/const DEVICE_ID|192\.168\.|updateCameraConfig|camera_url|ip_address/);
   // capture-now may be a queued command the camera fulfils by pushing the frame.
   assert.ok(source.includes("waitForCameraCommand("));
