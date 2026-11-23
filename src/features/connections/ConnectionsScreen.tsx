@@ -343,7 +343,7 @@ export function ConnectionsScreen() {
           ListEmptyComponent={
             !loading ? (
               <Text style={styles.emptyText}>Chưa có người dùng nào.</Text>
-            ) : null
+            ) : undefined
           }
           renderItem={renderBrowseItem}
         />
@@ -355,7 +355,7 @@ export function ConnectionsScreen() {
           ListEmptyComponent={
             !loading ? (
               <Text style={styles.emptyText}>Không có lời mời kết nối nào.</Text>
-            ) : null
+            ) : undefined
           }
           renderItem={renderRequestItem}
         />
@@ -367,7 +367,7 @@ export function ConnectionsScreen() {
           ListEmptyComponent={
             !loading ? (
               <Text style={styles.emptyText}>Chưa có kết nối nào.</Text>
-            ) : null
+            ) : undefined
           }
           renderItem={renderConnectionItem}
         />

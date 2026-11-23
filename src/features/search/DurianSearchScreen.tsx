@@ -507,7 +507,7 @@ export function DurianSearchScreen() {
                 </Pressable>
               </View>
             </View>
-          ) : null
+          ) : undefined
         }
         renderItem={renderResult}
         showsVerticalScrollIndicator={false}

@@ -548,7 +548,7 @@ export function DurianNotificationInboxScreen() {
                 </Pressable>
               </View>
             </View>
-          ) : null
+          ) : undefined
         }
         renderItem={useCallback(
           ({ item }: { item: NotificationItem }) => (

@@ -170,7 +170,7 @@ export function DurianFarmerCommunity() {
           data={feed.items}
           keyExtractor={(item) => item.id}
           ListEmptyComponent={loading ? <ActivityIndicator color={durianTheme.colors.moss} /> : <EmptyState text={error || "Bảng tin chưa có bài phù hợp."} />}
-          ListFooterComponent={loadingMore ? <ActivityIndicator color={durianTheme.colors.moss} style={styles.loader} /> : null}
+          ListFooterComponent={loadingMore ? <ActivityIndicator color={durianTheme.colors.moss} style={styles.loader} /> : undefined}
           ListHeaderComponent={<FeedFilters query={query} setQuery={setQuery} setSearch={setSearch} setTopic={setTopic} topic={topic} />}
           onEndReached={() => void loadMore()}
           onEndReachedThreshold={0.35}

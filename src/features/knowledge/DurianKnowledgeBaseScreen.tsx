@@ -89,8 +89,8 @@ export function DurianKnowledgeBaseScreen() {
         data={page.articles}
         keyExtractor={(item) => item.id}
         keyboardShouldPersistTaps="handled"
-        ListEmptyComponent={loading ? null : <EmptyState text={error ?? (committedQuery || category !== "Tất cả" ? "Không có bài phù hợp với bộ lọc hiện tại." : "Chưa có bài kiến thức.")} />}
-        ListFooterComponent={loadingMore ? <ActivityIndicator color={durianTheme.colors.moss} style={styles.footerLoader} /> : null}
+        ListEmptyComponent={loading ? undefined : <EmptyState text={error ?? (committedQuery || category !== "Tất cả" ? "Không có bài phù hợp với bộ lọc hiện tại." : "Chưa có bài kiến thức.")} />}
+        ListFooterComponent={loadingMore ? <ActivityIndicator color={durianTheme.colors.moss} style={styles.footerLoader} /> : undefined}
         ListHeaderComponent={
           <View style={styles.header}>
             <View style={styles.hero}>

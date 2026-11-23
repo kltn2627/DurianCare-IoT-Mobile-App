@@ -38,7 +38,7 @@ function activePrimaryTab(routeName: string | undefined): PrimaryTab {
   return "more";
 }
 
-function DurianBottomTabBar({ navigation, state }: DurianBottomTabBarProps) {
+function DurianBottomTabBar({ navigateToTab, state }: DurianBottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const routeName = state.routes[state.index]?.name;
   const activeTab = activePrimaryTab(routeName);
@@ -54,7 +54,11 @@ function DurianBottomTabBar({ navigation, state }: DurianBottomTabBarProps) {
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
             key={item.route}
-            onPress={() => navigation.navigate(item.route)}
+            onPress={() => {
+              // SDK 58 tab bars switch tabs by route key, not by name.
+              const target = state.routes.find((route) => route.name === item.route);
+              if (target) navigateToTab(target.key);
+            }}
             style={({ pressed }) => [styles.tabItem, pressed && styles.tabItemPressed]}
           >
             <View style={[styles.tabIcon, active && styles.tabIconActive]}>

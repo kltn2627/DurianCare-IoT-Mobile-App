@@ -133,7 +133,7 @@ export function DurianAiAssistantChannel() {
               <ActivityIndicator color={durianTheme.colors.moss} size="small" />
               <Text style={styles.typingText}>RAG đang tổng hợp câu trả lời...</Text>
             </View>
-          ) : null
+          ) : undefined
         }
         ListHeaderComponent={
           <View style={styles.aiNotice}>
