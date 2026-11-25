@@ -312,7 +312,7 @@ export function DurianExpertChannel({
       <View style={styles.centerState}>
         <ShieldCheck color={durianTheme.colors.moss} size={34} />
         <Text style={styles.emptyTitle}>Chat chỉ dành cho nông hộ và kỹ sư</Text>
-        <Text style={styles.emptyText}>Backend Chat hiện chỉ chấp nhận vai trò FARMER/ENGINEER.</Text>
+        <Text style={styles.emptyText}>Chat kỹ thuật chỉ dành cho nhà vườn và kỹ sư.</Text>
       </View>
     );
   }

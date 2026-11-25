@@ -96,7 +96,7 @@ async function iotFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res  = await fetch(`${base}${path}`, { ...init, headers });
   const text = await res.text().catch(() => "");
   const json = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new Error(json?.error ?? `API error ${res.status}`);
+  if (!res.ok) throw new Error(json?.error ?? `Không tải được dữ liệu (mã ${res.status}).`);
   return json as T;
 }
 
@@ -219,6 +219,34 @@ export type CameraDevice = {
 
 export async function listCameraDevices(): Promise<{ devices: CameraDevice[] }> {
   return iotFetch<{ devices: CameraDevice[] }>("/api/v1/camera/devices");
+}
+
+/** Stored photo through the current gateway with the user's token; the saved URL may name an old host. */
+export function captureImageSource(imageUrl: string): { uri: string; headers?: Record<string, string> } {
+  const file = /\/api\/v1\/camera\/image\/(cam_\d+\.jpg)$/.exec(imageUrl)?.[1];
+  if (!file) return { uri: imageUrl };
+  const token = getCachedAuthTokens()?.accessToken;
+  return {
+    uri: `${getApiBaseUrl()}/api/v1/camera/image/${file}`,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  };
+}
+
+// ── Auto-capture schedule (same contract as the Web camera page) ──────────────
+export type CameraSchedule = { cron_expression: string; label: string | null; enabled: boolean };
+
+export async function getCameraSchedule(deviceId: string): Promise<{ schedules: CameraSchedule[] }> {
+  return iotFetch<{ schedules: CameraSchedule[] }>(
+    `/api/v1/camera/schedule?device_id=${encodeURIComponent(deviceId)}`
+  );
+}
+
+export async function updateCameraSchedule(deviceId: string,
+  schedules: { cron_expression: string; label: string; enabled: boolean }[]): Promise<{ schedules: CameraSchedule[] }> {
+  return iotFetch<{ schedules: CameraSchedule[] }>("/api/v1/camera/schedule", {
+    method: "PUT",
+    body: JSON.stringify({ device_id: deviceId, schedules }),
+  });
 }
 
 export async function getCameraDevice(deviceId: string): Promise<{ device: CameraDevice }> {

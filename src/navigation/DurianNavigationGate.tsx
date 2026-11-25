@@ -25,7 +25,7 @@ export function DurianNavigationGate({ children }: { children: ReactNode }) {
       const isRootRoute = routeSegments.length === 0;
       const isProtectedRoute = firstSegment === "(main)";
       const isOwnerOnlyRoute =
-        isProtectedRoute && ["sensors", "authorization"].includes(routeSegments[1] ?? "");
+        isProtectedRoute && ["sensors", "camera", "authorization"].includes(routeSegments[1] ?? "");
 
       let target: string | null = null;
 

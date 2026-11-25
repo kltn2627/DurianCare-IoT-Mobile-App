@@ -480,7 +480,7 @@ export function DurianFarmCatalogScreen() {
           <Text style={styles.toolbarText}>
             {canManage
               ? "Bạn có thể quản lý farm sở hữu."
-              : "Farm được ủy quyền chỉ có thể xem theo quyền backend."}
+              : "Trang trại được ủy quyền chỉ xem được theo quyền đã cấp."}
           </Text>
           <Pressable
             accessibilityLabel="Làm mới farm"
@@ -509,7 +509,7 @@ export function DurianFarmCatalogScreen() {
         {!loading && !farms.length ? (
           <EmptyCard
             title="Chưa có farm sở hữu"
-            body="Tạo farm đầu tiên để thêm khu canh tác và mùa vụ thật từ backend."
+            body="Tạo trang trại đầu tiên để thêm khu canh tác và mùa vụ."
           />
         ) : null}
 
@@ -891,7 +891,7 @@ function ZoneDetailModal({
               <Text style={styles.zoneDetailSubtitle}>
                 {zone.code
                   ? `Mã khu: ${zone.code}`
-                  : "Dữ liệu catalog thật từ backend."}
+                  : "Danh sách trang trại của bạn."}
               </Text>
             </View>
 
@@ -1217,7 +1217,7 @@ function EditorModal({
               <Plus color={durianTheme.colors.white} size={18} />
             )}
             <Text style={styles.primaryButtonText}>
-              {saving ? "Đang lưu..." : "Lưu vào backend"}
+              {saving ? "Đang lưu..." : "Lưu"}
             </Text>
           </Pressable>
         </ScrollView>
@@ -1353,7 +1353,7 @@ function LoadingCard() {
     <View style={styles.loadingCard}>
       <ActivityIndicator color={durianTheme.colors.moss} />
       <Text style={styles.loadingText}>
-        Đang tải catalog thật từ backend...
+        Đang tải danh sách trang trại...
       </Text>
     </View>
   );

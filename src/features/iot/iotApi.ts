@@ -6,6 +6,7 @@ import type {
   IotDeviceMutationRequest,
   IotDeviceListResponse,
   IotDeviceResponse,
+  IotTelemetryBucketResponse,
   IotTelemetryHistoryResponse,
   IotTelemetryLatestResponse,
 } from "./types";
@@ -76,6 +77,11 @@ export const iotApi = {
     request<IotTelemetryLatestResponse>({
       method: "GET",
       url: `/api/iot/devices/${encodeURIComponent(deviceId)}/telemetry/latest`,
+    }),
+  telemetryBuckets: (deviceId: string, query: { from: string; to: string }) =>
+    request<IotTelemetryBucketResponse>({
+      method: "GET",
+      url: `/api/iot/devices/${encodeURIComponent(deviceId)}/telemetry/buckets${historyQuery(query)}`,
     }),
   telemetryHistory: (deviceId: string, query: HistoryQuery = {}) =>
     request<IotTelemetryHistoryResponse>({

@@ -13,6 +13,32 @@ export type IotTelemetryReading = {
   receivedAt: string | null;
   temperature: number | null;
   units: IotTelemetryUnits;
+  /** Fields the gateway also returns (same shape as the Web client). */
+  air_humidity?: number | null;
+  soilMoisture?: number | null;
+  soil_moisture?: number | null;
+  soilStatus?: string | null;
+  /** DEVICE = measured; SYNTHETIC_BACKFILL = labelled simulated history. */
+  source?: "DEVICE" | "SYNTHETIC_BACKFILL" | string;
+  status?: "DRY_WARNING" | "OPTIMAL" | "WET_WARNING" | null;
+};
+
+/** Server-side downsampled history for long ranges (one row per time slot and source). */
+export type IotTelemetryBucket = {
+  bucketEnd: string;
+  bucketStart: string;
+  count: number;
+  humidity: number | null;
+  light: number | null;
+  soilMoisture: number | null;
+  soilStatusCounts: { DRY_WARNING: number; OPTIMAL: number; WET_WARNING: number };
+  source: "DEVICE" | "SYNTHETIC_BACKFILL" | string;
+  temperature: number | null;
+};
+
+export type IotTelemetryBucketResponse = {
+  buckets: IotTelemetryBucket[];
+  range: { bucketSeconds: number; from: string; to: string };
 };
 
 export type IotDeviceStatus = "ACTIVE" | "INACTIVE" | "MAINTENANCE" | "DELETED" | string;

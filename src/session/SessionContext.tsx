@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -113,6 +114,10 @@ async function loadProfileForUser(baseUser: SessionUser) {
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<SessionState | null>(null);
+  // Profile callbacks read the session from here so their identity never changes: screens load the profile in an
+  // effect keyed on them, and depending on `session` while also writing it reloaded the profile forever.
+  const sessionRef = useRef<SessionState | null>(null);
+  sessionRef.current = session;
   const [isRestoring, setIsRestoring] = useState(true);
 
   const clearLocalSession = useCallback(async function clearLocalSession() {
@@ -204,9 +209,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshProfile = useCallback(async function refreshCurrentProfile() {
-    if (!session) return null;
+    if (!sessionRef.current) return null;
     const profile = await profileClient.me();
-    const nextUser = mergeProfileIntoUser(session.user, profile);
+    const currentUser = sessionRef.current?.user;
+    if (!currentUser) return null;
+    const nextUser = mergeProfileIntoUser(currentUser, profile);
+    if (JSON.stringify(nextUser) === JSON.stringify(currentUser)) return currentUser;
     await AsyncStorage.setItem(USER_KEY, JSON.stringify(nextUser));
     setSession((current) =>
       current
@@ -217,12 +225,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         : current,
     );
     return nextUser;
-  }, [session]);
+  }, []);
 
   const applyProfileSnapshot = useCallback(
     async function applyProfileSnapshot(profile: ProfileRecord) {
-      if (!session) return;
-      const nextUser = mergeProfileIntoUser(session.user, profile);
+      const currentUser = sessionRef.current?.user;
+      if (!currentUser) return;
+      const nextUser = mergeProfileIntoUser(currentUser, profile);
+      if (JSON.stringify(nextUser) === JSON.stringify(currentUser)) return;
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(nextUser));
       setSession((current) =>
         current
@@ -233,7 +243,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           : current,
       );
     },
-    [session],
+    [],
   );
 
   useEffect(

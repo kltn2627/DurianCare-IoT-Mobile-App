@@ -8,7 +8,7 @@ import { SessionProvider } from "@/src/session/SessionContext";
 import { WorkspaceProvider } from "@/src/workspace/WorkspaceContext";
 
 export const unstable_settings = {
-  initialRouteName: "login",
+  anchor: "login",
 };
 
 export default function DurianCareRootLayout() {

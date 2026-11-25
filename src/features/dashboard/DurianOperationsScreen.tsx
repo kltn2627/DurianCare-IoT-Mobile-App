@@ -110,9 +110,11 @@ export function DurianOperationsScreen() {
   const backendRole = user?.backendRole ?? "GUEST";
   const chatSupported = backendRole === "FARMER" || backendRole === "ENGINEER";
 
-  const loadDashboard = useCallback(async () => {
-    if (!user) return;
-    setRefreshing(true);
+  const userId = user?.id;
+  const loadDashboard = useCallback(async (showSpinner = false) => {
+    if (!userId) return;
+    // Only a user pull shows the spinner: on iOS a programmatic one scrolls the page back to the top.
+    if (showSpinner) setRefreshing(true);
     const [
       authorizedFarmsResult,
       ownedFarmsResult,
@@ -124,7 +126,7 @@ export function DurianOperationsScreen() {
       notificationsResult,
       chatResult,
     ] = await Promise.allSettled([
-      user.backendRole === "FARMER" ? Promise.resolve([]) : listAuthorizedFarms(),
+      backendRole === "FARMER" ? Promise.resolve([]) : listAuthorizedFarms(),
       listOwnedFarms(),
       listCultivationPlans(),
       listCultivationActivities(),
@@ -167,7 +169,7 @@ export function DurianOperationsScreen() {
     });
     setLoadedOnce(true);
     setRefreshing(false);
-  }, [chatSupported, user]);
+  }, [backendRole, chatSupported, userId]);
 
   useEffect(() => {
     void loadDashboard();
@@ -204,7 +206,7 @@ export function DurianOperationsScreen() {
         refreshControl={
           <RefreshControl
             colors={[durianTheme.colors.moss]}
-            onRefresh={loadDashboard}
+            onRefresh={() => void loadDashboard(true)}
             refreshing={refreshing}
             tintColor={durianTheme.colors.moss}
           />
@@ -217,7 +219,7 @@ export function DurianOperationsScreen() {
               <Text style={styles.roleBadgeText}>{backendRole}</Text>
             </View>
             <View style={styles.heroActions}>
-              <Pressable hitSlop={12} onPress={loadDashboard}>
+              <Pressable hitSlop={12} onPress={() => void loadDashboard(true)}>
                 <RefreshCw color={durianTheme.colors.mist} size={20} />
               </Pressable>
               <Pressable hitSlop={12} onPress={handleLogout}>
@@ -319,7 +321,7 @@ export function DurianOperationsScreen() {
                 : "Chưa có chẩn đoán gần đây."
           }
           icon={Stethoscope}
-          meta="Nguồn: /api/v1/predict/history"
+          meta="Từ lịch sử chẩn đoán của bạn"
           title={latestDiagnosis ? "Chẩn đoán AI mới nhất" : "AI Diagnosis"}
         />
         <SummaryCard
@@ -343,11 +345,11 @@ export function DurianOperationsScreen() {
         <SummaryCard
           body={
             chatSupported
-              ? `${data.chatConversations.length} cuộc trò chuyện, ${unreadChatCount} tin chưa đọc từ backend chat.`
+              ? `${data.chatConversations.length} cuộc trò chuyện, ${unreadChatCount} tin chưa đọc.`
               : "Role hiện tại không nằm trong contract Chat farmer/engineer."
           }
           icon={MessageCircle}
-          meta={errors.chatConversations ? "Không thể tải chat lúc này." : "Nguồn: /api/chat/conversations"}
+          meta={errors.chatConversations ? "Không thể tải chat lúc này." : "Tin nhắn với kỹ sư"}
           title="Chat kỹ thuật"
         />
         <ActionCard

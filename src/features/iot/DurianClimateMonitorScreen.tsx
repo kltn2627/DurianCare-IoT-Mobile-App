@@ -20,10 +20,8 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
-import Svg, { Circle, Line, Polyline } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
@@ -51,12 +49,13 @@ import { durianTheme } from "@/src/theme/durianTheme";
 import { iotApi } from "./iotApi";
 import { iotLifecycleApi, lifecycleMessage } from "./lifecycleApi";
 import { IotDeviceSettingsCard } from "./IotDeviceSettingsCard";
+import { SensorAnalytics } from "./SensorAnalytics";
+import { soilMoistureOf } from "./sensorSeries";
 import type { IotAlert, IotDevice, IotTelemetryReading, MutableIotDeviceStatus } from "./types";
 
-const HISTORY_LIMIT = 288;
 const DEVICE_STATUSES: MutableIotDeviceStatus[] = ["ACTIVE", "INACTIVE", "MAINTENANCE"];
 
-type MetricKey = "humidity" | "light" | "temperature";
+type MetricKey = "humidity" | "soil" | "temperature";
 type FoundationData = {
   activities: CultivationActivity[];
   authorizedFarms: AuthorizedFarm[];
@@ -86,22 +85,21 @@ const METRICS: Array<{
     unit: "%",
   },
   {
-    accent: durianTheme.colors.durianYellow,
+    accent: "#BFD9A8",
     icon: Gauge,
-    key: "light",
-    label: "Ánh sáng",
-    unit: "raw",
+    key: "soil",
+    label: "Độ ẩm đất",
+    unit: "%",
   },
 ];
 
 export function DurianClimateMonitorScreen() {
-  const { width } = useWindowDimensions();
   const [devices, setDevices] = useState<IotDevice[]>([]);
   const [alerts, setAlerts] = useState<IotAlert[]>([]);
   const [alertsError, setAlertsError] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [latest, setLatest] = useState<IotTelemetryReading | null>(null);
-  const [history, setHistory] = useState<IotTelemetryReading[]>([]);
+  const [analyticsKey, setAnalyticsKey] = useState(0);
   const [foundation, setFoundation] = useState<FoundationData>({ activities: [], authorizedFarms: [], ownedFarms: [], plans: [] });
   const [registerDraft, setRegisterDraft] = useState({
     claimCode: "",
@@ -122,9 +120,9 @@ export function DurianClimateMonitorScreen() {
     status: "ACTIVE",
   });
   const [error, setError] = useState<string | null>(null);
+  // Only a user pull shows the spinner: on iOS a programmatic `refreshing` jumps the list back to the top.
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const chartWidth = Math.max(280, Math.min(420, width - 58));
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.id === selectedDeviceId) ?? devices[0] ?? null,
@@ -162,7 +160,6 @@ export function DurianClimateMonitorScreen() {
   }, [registerDraft.farmId]);
 
   const loadDevices = useCallback(async () => {
-    setRefreshing(true);
     setError(null);
     try {
       const response = await iotApi.listDevices();
@@ -172,14 +169,9 @@ export function DurianClimateMonitorScreen() {
         ? selectedDeviceId
         : nextDevices[0]?.id ?? "";
       setSelectedDeviceId(nextDeviceId);
-      if (!nextDeviceId) {
-        setLatest(null);
-        setHistory([]);
-      }
+      if (!nextDeviceId) setLatest(null);
     } catch (loadError) {
       setError(messageFromError(loadError));
-    } finally {
-      setRefreshing(false);
     }
   }, [selectedDeviceId]);
 
@@ -199,25 +191,24 @@ export function DurianClimateMonitorScreen() {
 
   const loadTelemetry = useCallback(async (deviceId: string) => {
     if (!deviceId) return;
-    setRefreshing(true);
     setError(null);
     try {
-      const [latestResponse, historyResponse] = await Promise.all([
-        iotApi.latestTelemetry(deviceId),
-        iotApi.telemetryHistory(deviceId, { limit: HISTORY_LIMIT }),
-      ]);
+      const latestResponse = await iotApi.latestTelemetry(deviceId);
       setLatest(latestResponse?.telemetry ?? null);
-      setHistory(Array.isArray(historyResponse?.telemetry) ? historyResponse.telemetry : []);
     } catch (loadError) {
       setError(messageFromError(loadError));
-    } finally {
-      setRefreshing(false);
     }
   }, []);
 
   const refresh = useCallback(async () => {
-    await Promise.all([loadDevices(), loadFoundation(), loadAlerts()]);
-    if (selectedDeviceId) await loadTelemetry(selectedDeviceId);
+    setRefreshing(true);
+    try {
+      await Promise.all([loadDevices(), loadFoundation(), loadAlerts()]);
+      if (selectedDeviceId) await loadTelemetry(selectedDeviceId);
+      setAnalyticsKey((key) => key + 1);
+    } finally {
+      setRefreshing(false);
+    }
   }, [loadAlerts, loadDevices, loadFoundation, loadTelemetry, selectedDeviceId]);
 
   useEffect(() => {
@@ -310,7 +301,6 @@ export function DurianClimateMonitorScreen() {
       await loadDevices();
       setSelectedDeviceId("");
       setLatest(null);
-      setHistory([]);
     } catch (deleteError) {
       setError(messageFromError(deleteError));
     } finally {
@@ -422,29 +412,12 @@ export function DurianClimateMonitorScreen() {
             <MetricCard
               key={metric.key}
               metric={metric}
-              value={latest ? latest[metric.key] : null}
+              value={!latest ? null : metric.key === "soil" ? soilMoistureOf(latest) : latest[metric.key]}
             />
           ))}
         </View>
 
-        <View style={styles.chartCard}>
-          <SectionHeading
-            title="Lịch sử nhiệt độ & độ ẩm"
-          />
-          {history.length > 1 ? (
-            <>
-              <View style={styles.legendRow}>
-                <Legend color={durianTheme.colors.durianYellow} label="Nhiệt độ" />
-                <Legend color="#72BFA9" label="Độ ẩm" />
-              </View>
-              <TelemetryLineChart chartWidth={chartWidth} series={history} />
-            </>
-          ) : (
-            <Text style={styles.emptyText}>
-              Chưa đủ dữ liệu để vẽ biểu đồ.
-            </Text>
-          )}
-        </View>
+        {selectedDevice ? <SensorAnalytics key={selectedDevice.id} deviceId={selectedDevice.id} refreshKey={analyticsKey} /> : null}
 
         {selectedDevice ? (
           <View style={styles.chartCard}>
@@ -473,7 +446,7 @@ function DeviceChip({
       <RadioTower color={active ? durianTheme.colors.white : durianTheme.colors.moss} size={18} />
       <Text style={[styles.deviceChipName, active && styles.deviceChipNameActive]}>{device.name}</Text>
       <Text style={[styles.deviceChipMeta, active && styles.deviceChipNameActive]}>
-        {device.connectivityStatus ?? "UNKNOWN"} · Farm {shortFoundationId(device.farmId)}
+        {connectivityLabel(device.connectivityStatus)} · Vườn {shortFoundationId(device.farmId)}
       </Text>
     </Pressable>
   );
@@ -493,11 +466,11 @@ function AlertListCard({
   const safeAlerts = Array.isArray(alerts) ? alerts : [];
   return (
     <View style={styles.chartCard}>
-      <SectionHeading caption="Nguồn thật từ /api/iot/alerts?status=ALERTING" title="Cảnh báo IoT" />
+      <SectionHeading caption="Cảnh báo đang mở từ thiết bị trong vườn" title="Cảnh báo IoT" />
       {error ? (
         <Text style={styles.errorText}>Không thể tải cảnh báo IoT: {error}</Text>
       ) : safeAlerts.length === 0 ? (
-        <Text style={styles.emptyText}>Không có alert IoT đang mở.</Text>
+        <Text style={styles.emptyText}>Không có cảnh báo nào đang mở.</Text>
       ) : (
         safeAlerts.slice(0, 5).map((alert) => (
           <View key={alert.id} style={styles.alertRow}>
@@ -696,43 +669,6 @@ function MetricCard({
   );
 }
 
-function TelemetryLineChart({
-  chartWidth,
-  series,
-}: {
-  chartWidth: number;
-  series: IotTelemetryReading[];
-}) {
-  const chartHeight = 150;
-  const temperaturePoints = createPolylinePoints(series, chartWidth, chartHeight, "temperature");
-  const humidityPoints = createPolylinePoints(series, chartWidth, chartHeight, "humidity");
-  return (
-    <View style={styles.svgWrap}>
-      <Svg height={chartHeight} width="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
-        <LineGrid chartHeight={chartHeight} chartWidth={chartWidth} />
-        <Polyline
-          fill="none"
-          points={temperaturePoints}
-          stroke={durianTheme.colors.durianYellow}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="4"
-        />
-        <Polyline
-          fill="none"
-          points={humidityPoints}
-          stroke="#72BFA9"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="4"
-        />
-        <LatestPoint color={durianTheme.colors.durianYellow} points={temperaturePoints} />
-        <LatestPoint color="#72BFA9" points={humidityPoints} />
-      </Svg>
-    </View>
-  );
-}
-
 function DeviceDetail({
   device,
   latest,
@@ -742,15 +678,14 @@ function DeviceDetail({
 }) {
   return (
     <View style={styles.detailList}>
-      <DetailRow label="UID" value={device.deviceUid} />
-      <DetailRow label="Farm" value={device.farmId} />
-      <DetailRow label="Khu/plot" value={device.cultivationAreaId ?? "Không gắn khu"} />
-      <DetailRow label="Registry status" value={device.status} />
-      <DetailRow label="Connectivity" value={device.connectivityStatus ?? "UNKNOWN"} />
-      <DetailRow label="Telemetry state" value={device.telemetryState} />
-      <DetailRow label="Connectivity basis" value={device.connectivity?.basis ?? "Backend"} />
-      <DetailRow label="Measured at" value={latest?.measuredAt ? formatDateTime(latest.measuredAt) : "Chưa có"} />
-      <DetailRow label="Received at" value={latest?.receivedAt ? formatDateTime(latest.receivedAt) : "Chưa có"} />
+      <DetailRow label="Mã thiết bị" value={device.deviceUid} />
+      <DetailRow label="Trang trại" value={device.farmId} />
+      <DetailRow label="Khu canh tác" value={device.cultivationAreaId ?? "Không gắn khu"} />
+      <DetailRow label="Trạng thái" value={STATUS_LABELS[device.status] ?? device.status} />
+      <DetailRow label="Kết nối" value={connectivityLabel(device.connectivityStatus)} />
+      <DetailRow label="Dữ liệu" value={device.telemetryState === "HAS_TELEMETRY" ? "Đã có số đo" : "Chưa có số đo"} />
+      <DetailRow label="Thời điểm đo" value={latest?.measuredAt ? formatDateTime(latest.measuredAt) : "Chưa có"} />
+      <DetailRow label="Thời điểm nhận" value={latest?.receivedAt ? formatDateTime(latest.receivedAt) : "Chưa có"} />
     </View>
   );
 }
@@ -782,62 +717,6 @@ function SectionHeading({ caption, title }: { caption?: string; title: string })
   );
 }
 
-function Legend({ color, label }: { color: string; label: string }) {
-  return (
-    <View style={styles.legendItem}>
-      <View style={[styles.legendDot, { backgroundColor: color }]} />
-      <Text style={styles.legendText}>{label}</Text>
-    </View>
-  );
-}
-
-function LineGrid({ chartHeight, chartWidth }: { chartHeight: number; chartWidth: number }) {
-  return (
-    <>
-      <Line stroke={durianTheme.colors.mossSoft} x1="12" x2={chartWidth - 12} y1="24" y2="24" />
-      <Line stroke={durianTheme.colors.mossSoft} x1="12" x2={chartWidth - 12} y1="70" y2="70" />
-      <Line
-        stroke={durianTheme.colors.mossSoft}
-        x1="12"
-        x2={chartWidth - 12}
-        y1={chartHeight - 24}
-        y2={chartHeight - 24}
-      />
-    </>
-  );
-}
-
-function LatestPoint({ color, points }: { color: string; points: string }) {
-  const latestPoint = points.split(" ").filter(Boolean).at(-1);
-  if (!latestPoint) return null;
-  const [cx, cy] = latestPoint.split(",");
-  return <Circle cx={cx} cy={cy} fill={color} r="5" />;
-}
-
-function createPolylinePoints(
-  series: IotTelemetryReading[],
-  width: number,
-  height: number,
-  field: "humidity" | "temperature",
-) {
-  const values = series.map((item) => item[field]).filter((value): value is number => value !== null);
-  if (values.length === 0) return "";
-  const minimum = Math.min(...values);
-  const maximum = Math.max(...values);
-  const span = Math.max(1, maximum - minimum);
-  return series
-    .map((item, index) => {
-      const value = item[field];
-      if (value === null) return "";
-      const x = 14 + index * ((width - 28) / Math.max(1, series.length - 1));
-      const normalized = (value - minimum) / span;
-      const y = height - 20 - normalized * (height - 40);
-      return `${x},${Math.max(18, Math.min(height - 18, y))}`;
-    })
-    .filter(Boolean)
-    .join(" ");
-}
-
 function formatMetricValue(value: number | null) {
   if (value === null) return "--";
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
@@ -856,6 +735,14 @@ function formatDateTime(value: string) {
 }
 
 const STATUS_LABELS: Record<string, string> = { ACTIVE: "Hoạt động", INACTIVE: "Tạm ngưng", MAINTENANCE: "Bảo trì" };
+
+const CONNECTION_LABELS: Record<string, string> = {
+  ONLINE: "Đang kết nối", STALE: "Dữ liệu đã cũ", OFFLINE: "Mất kết nối", INACTIVE: "Ngừng hoạt động", MAINTENANCE: "Đang bảo trì",
+};
+
+function connectivityLabel(status: string | null | undefined) {
+  return CONNECTION_LABELS[status ?? ""] ?? "Chưa rõ kết nối";
+}
 
 function messageFromError(error: unknown) {
   return error instanceof Error ? error.message : "Không thể tải dữ liệu IoT.";

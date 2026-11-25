@@ -1,21 +1,17 @@
 import {
   AlertCircle,
-  Brain,
   Camera,
   CheckCircle2,
   Clock,
-  Leaf,
   Loader2,
   RefreshCw,
   Settings,
-  ShieldAlert,
   X,
 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
-  FlatList,
   Image,
   Modal,
   Pressable,
@@ -29,9 +25,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { DurianScreenHeader } from "@/src/components/DurianScreenHeader";
 import { durianTheme } from "@/src/theme/durianTheme";
 import {
+  captureImageSource,
   captureNow,
   fetchCameraHistory,
+  getCameraSchedule,
   listCameraDevices,
+  updateCameraSchedule,
   cameraSnapshotSource,
   startCameraLive,
   waitForCameraCommand,
@@ -47,18 +46,15 @@ const PREVIEW_POLL = 8_000;
 const LIVE_FRAME_POLL = 350;
 const LIVE_LOAD_TIMEOUT = 5_000;  // a frame request that never settles must not freeze the live view
 
-const DISEASE_NAMES: Record<string, string> = {
-  ALGAL_LEAF_SPOT:     "Đốm rong tảo",
-  ALLOCARIDARA_ATTACK: "Sâu Allocaridara",
-  HEALTHY_LEAF:        "Lá khỏe mạnh",
-  LEAF_BLIGHT:         "Cháy lá",
-  PHOMOPSIS_LEAF_SPOT: "Đốm lá Phomopsis",
-};
-
-function getDiseaseName(code: string | null, viName?: string | null) {
-  if (!code) return "—";
-  return viName || DISEASE_NAMES[code] || code;
-}
+// Auto-capture slots: same fixed daily times as the Web camera page.
+const TIME_SLOTS = [
+  { cron: "0 6 * * *",  label: "06:00" },
+  { cron: "0 8 * * *",  label: "08:00" },
+  { cron: "0 10 * * *", label: "10:00" },
+  { cron: "0 12 * * *", label: "12:00" },
+  { cron: "0 14 * * *", label: "14:00" },
+  { cron: "0 16 * * *", label: "16:00" },
+];
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleString("vi-VN", {
@@ -68,153 +64,152 @@ function formatTime(iso: string) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function DiseaseBadge({ capture }: { capture: CameraCapture }) {
-  const { ai_status, disease_detected, confidence_score, diagnosis_result } = capture;
-  if (!ai_status) return null;
-
-  const diag = diagnosis_result as Record<string, unknown> | null;
-  const viName = typeof diag?.vietnameseName === "string" ? diag.vietnameseName : null;
-  const name   = getDiseaseName(disease_detected, viName);
-  const pct    = confidence_score != null ? Math.round(confidence_score * 100) : null;
-  const isHealthy = disease_detected === "HEALTHY_LEAF";
-
-  if (ai_status === "PROCESSING") {
-    return (
-      <View style={[styles.badge, { backgroundColor: "#f59e0b" }]}>
-        <Text style={styles.badgeText}>Đang phân tích...</Text>
-      </View>
-    );
-  }
-  if (ai_status === "FAILED") {
-    return (
-      <View style={[styles.badge, { backgroundColor: "#6b7280" }]}>
-        <Text style={styles.badgeText}>Lỗi AI</Text>
-      </View>
-    );
-  }
-  if (ai_status === "COMPLETED" && disease_detected) {
-    return (
-      <View style={[styles.badge, { backgroundColor: isHealthy ? "#16a34a" : "#dc2626" }]}>
-        <Text style={styles.badgeText} numberOfLines={1}>
-          {name}{pct != null ? ` · ${pct}%` : ""}
-        </Text>
-      </View>
-    );
-  }
-  return null;
-}
-
-function DiagnosisModal({
-  capture,
-  onClose,
-}: {
-  capture: CameraCapture | null;
-  onClose: () => void;
-}) {
+function PhotoModal({ capture, onClose }: { capture: CameraCapture | null; onClose: () => void }) {
   if (!capture) return null;
-
-  const diag     = capture.diagnosis_result as Record<string, unknown> | null;
-  const viName   = typeof diag?.vietnameseName === "string" ? diag.vietnameseName : null;
-  const summary  = typeof diag?.diseaseSummary === "string" ? diag.diseaseSummary : null;
-  const symptoms = Array.isArray(diag?.symptoms) ? diag.symptoms as string[] : [];
-  const actions  = Array.isArray(diag?.immediateActions) ? diag.immediateActions as string[] : [];
-  const name     = getDiseaseName(capture.disease_detected, viName);
-  const isHealthy = capture.disease_detected === "HEALTHY_LEAF";
-  const pct      = capture.confidence_score != null ? Math.round(capture.confidence_score * 100) : null;
-  const riskLevel = typeof diag?.riskLevel === "string" ? diag.riskLevel : null;
-
-  const riskColor = riskLevel === "CRITICAL" ? "#dc2626"
-    : riskLevel === "HIGH"    ? "#ea580c"
-    : riskLevel === "MEDIUM"  ? "#d97706"
-    : "#16a34a";
-
   return (
     <Modal visible animationType="slide" onRequestClose={onClose} transparent>
       <View style={styles.modalOverlay}>
         <View style={styles.modalSheet}>
-          {/* Header */}
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{formatTime(capture.captured_at)}</Text>
-            <Pressable onPress={onClose} hitSlop={8}>
+            <Pressable onPress={onClose} hitSlop={8} accessibilityLabel="Đóng ảnh">
               <X color={durianTheme.colors.muted} size={20} />
             </Pressable>
           </View>
-
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Image */}
-            <Image
-              source={{ uri: capture.image_url }}
-              style={styles.modalImage}
-              resizeMode="cover"
-            />
-
-            {/* AI Result */}
-            {capture.ai_status === "COMPLETED" && (
-              <View style={styles.diagnosisCard}>
-                <View style={[styles.diagnosisHeader, { borderLeftColor: isHealthy ? "#16a34a" : riskColor }]}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    {isHealthy
-                      ? <Leaf color="#16a34a" size={18} />
-                      : <ShieldAlert color={riskColor} size={18} />
-                    }
-                    <Text style={[styles.diseaseName, { color: isHealthy ? "#15803d" : "#1a1a1a" }]}>
-                      {name}
-                    </Text>
-                  </View>
-                  {pct != null && (
-                    <View>
-                      <View style={[styles.confBar, { backgroundColor: "#e5e7eb" }]}>
-                        <View style={[styles.confFill, { width: `${pct}%`, backgroundColor: isHealthy ? "#16a34a" : riskColor }]} />
-                      </View>
-                      <Text style={styles.confText}>Độ tin cậy: {pct}%</Text>
-                    </View>
-                  )}
-                  {riskLevel && (
-                    <View style={[styles.riskPill, { backgroundColor: riskColor + "22", borderColor: riskColor }]}>
-                      <Text style={[styles.riskText, { color: riskColor }]}>Rủi ro: {riskLevel}</Text>
-                    </View>
-                  )}
-                </View>
-
-                {summary && <Text style={styles.summary}>{summary}</Text>}
-
-                {symptoms.length > 0 && (
-                  <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Triệu chứng nhận biết</Text>
-                    {symptoms.slice(0, 4).map((s, i) => (
-                      <Text key={i} style={styles.bulletItem}>• {s}</Text>
-                    ))}
-                  </View>
-                )}
-
-                {actions.length > 0 && !isHealthy && (
-                  <View style={[styles.section, styles.actionBox]}>
-                    <Text style={[styles.sectionTitle, { color: "#dc2626" }]}>Hành động ngay</Text>
-                    {actions.slice(0, 3).map((a, i) => (
-                      <Text key={i} style={[styles.bulletItem, { color: "#7f1d1d" }]}>→ {a}</Text>
-                    ))}
-                  </View>
-                )}
-              </View>
-            )}
-
-            {capture.ai_status === "PROCESSING" && (
-              <View style={styles.aiPending}>
-                <ActivityIndicator color={durianTheme.colors.warning} />
-                <Text style={styles.aiPendingText}>AI đang phân tích ảnh...</Text>
-              </View>
-            )}
-
-            {capture.ai_status === "FAILED" && (
-              <View style={styles.aiPending}>
-                <AlertCircle color={durianTheme.colors.muted} size={18} />
-                <Text style={styles.aiPendingText}>AI không phân tích được ảnh này.</Text>
-              </View>
-            )}
-          </ScrollView>
+          <Image source={captureImageSource(capture.image_url)} style={styles.modalImage} resizeMode="contain" />
         </View>
       </View>
     </Modal>
+  );
+}
+
+// Auto-capture schedule (no AI diagnosis on mobile): pick daily slots, save to the gateway.
+function ScheduleCard({ deviceId }: { deviceId: string }) {
+  const [enabled, setEnabled]   = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
+  const [saved, setSaved]       = useState(false);
+  // Saving replaces the whole schedule, so it stays blocked until the current one has been read.
+  const [loaded, setLoaded]     = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!deviceId) return;
+    setLoading(true);
+    try {
+      const res = await getCameraSchedule(deviceId);
+      const active = new Set(res.schedules.filter(s => s.enabled).map(s => s.cron_expression));
+      setSelected(active);
+      setEnabled(active.size > 0);
+      setLoaded(true);
+      setError(null);
+    } catch {
+      setError("Không tải được lịch chụp.");
+    } finally {
+      setLoading(false);
+    }
+  }, [deviceId]);
+  useEffect(() => { void load(); }, [load]);
+
+  const toggleEnabled = () => {
+    const next = !enabled;
+    setEnabled(next);
+    // First time on with nothing picked: pre-select every slot, like the Web page.
+    if (next && selected.size === 0) setSelected(new Set(TIME_SLOTS.map(t => t.cron)));
+  };
+  const toggleSlot = (cron: string) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(cron)) next.delete(cron); else next.add(cron);
+    return next;
+  });
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = enabled
+        ? TIME_SLOTS.filter(t => selected.has(t.cron)).map(t => ({ cron_expression: t.cron, label: t.label, enabled: true }))
+        : [];
+      await updateCameraSchedule(deviceId, payload);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3_000);
+      void load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Lưu lịch thất bại.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const chosen = TIME_SLOTS.filter(t => selected.has(t.cron)).map(t => t.label);
+  return (
+    <View style={styles.previewCard}>
+      <View style={styles.scheduleHeader}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
+          <Clock color={durianTheme.colors.moss} size={18} />
+          <Text style={styles.historyTitle}>Lịch chụp tự động</Text>
+        </View>
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: enabled }}
+          accessibilityLabel="Bật lịch chụp tự động"
+          disabled={loading || !loaded}
+          onPress={toggleEnabled}
+          style={[styles.switchTrack, enabled && styles.switchTrackOn]}
+        >
+          <View style={[styles.switchThumb, enabled && styles.switchThumbOn]} />
+        </Pressable>
+      </View>
+      {loading ? <ActivityIndicator color={durianTheme.colors.moss} /> : !loaded ? (
+        <Pressable onPress={() => void load()} accessibilityRole="button" style={styles.errorBanner}>
+          <AlertCircle color="#dc2626" size={14} />
+          <Text style={styles.errorText}>{error ?? "Không tải được lịch chụp."} Bấm để thử lại.</Text>
+        </Pressable>
+      ) : (
+        <>
+          <Text style={styles.scheduleHint}>
+            {enabled ? "Chọn giờ camera tự chụp mỗi ngày:" : "Đang tắt — camera chỉ chụp khi bạn bấm “Chụp hình ngay”."}
+          </Text>
+          {enabled && (
+            <View style={styles.slotGrid}>
+              {TIME_SLOTS.map(t => {
+                const active = selected.has(t.cron);
+                return (
+                  <Pressable key={t.cron} onPress={() => toggleSlot(t.cron)}
+                    accessibilityRole="checkbox" accessibilityState={{ checked: active }}
+                    style={[styles.slot, active && styles.slotActive]}>
+                    <Text style={[styles.slotText, active && styles.slotTextActive]}>{t.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+          {enabled && selected.size === 0 && <Text style={styles.errorText}>Chọn ít nhất một khung giờ.</Text>}
+          <Pressable
+            onPress={save}
+            disabled={saving || !deviceId || (enabled && selected.size === 0)}
+            style={({ pressed }) => [styles.captureBtn, pressed && styles.pressed,
+              (saving || (enabled && selected.size === 0)) && styles.disabled]}
+          >
+            {saving
+              ? <><Loader2 color="#fff" size={16} /><Text style={styles.captureBtnText}>Đang lưu...</Text></>
+              : saved
+                ? <><CheckCircle2 color="#fff" size={16} /><Text style={styles.captureBtnText}>Đã lưu lịch</Text></>
+                : <Text style={styles.captureBtnText}>Lưu lịch chụp</Text>}
+          </Pressable>
+          {enabled && chosen.length > 0 && (
+            <Text style={styles.scheduleHint}>Tự chụp lúc {chosen.join(" · ")} hằng ngày.</Text>
+          )}
+          {error && (
+            <View style={styles.errorBanner}>
+              <AlertCircle color="#dc2626" size={14} />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
+        </>
+      )}
+    </View>
   );
 }
 
@@ -258,13 +253,10 @@ export function CameraMonitorScreen() {
 
   const router = useRouter();
 
-  const [captureStep, setCaptureStep]     = useState<"idle" | "capturing" | "analyzing">("idle");
-  const [captureResult, setCaptureResult] = useState<CameraCapture | null>(null);
+  const [captureStep, setCaptureStep]     = useState<"idle" | "capturing">("idle");
   const [captureError, setCaptureError]   = useState<string | null>(null);
-  const stepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useFocusEffect(useCallback(() => {
     setCaptureStep("idle");
-    return () => { if (stepTimerRef.current) clearTimeout(stepTimerRef.current); };
   }, [deviceId]));
 
   const [history, setHistory]       = useState<CameraCapture[]>([]);
@@ -344,9 +336,7 @@ export function CameraMonitorScreen() {
   const handleCapture = async () => {
     const generation = requestGeneration.current;
     setCaptureStep("capturing");
-    setCaptureResult(null);
     setCaptureError(null);
-    stepTimerRef.current = setTimeout(() => setCaptureStep("analyzing"), 2_000);
     try {
       const result = await captureNow(deviceId);
       let cap = result.kind === "capture" ? result.capture : null;
@@ -365,13 +355,11 @@ export function CameraMonitorScreen() {
         nextFrame();
       }
       if (generation !== requestGeneration.current || !cap) return;
-      setCaptureResult(cap);
       setEnlarged(cap);
       void loadHistory();
     } catch (err) {
       setCaptureError(err instanceof Error ? err.message : "Chụp hình thất bại.");
     } finally {
-      if (stepTimerRef.current) clearTimeout(stepTimerRef.current);
       setCaptureStep("idle");
     }
   };
@@ -382,10 +370,10 @@ export function CameraMonitorScreen() {
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <DurianScreenHeader
-          eyebrow="ESP32-CAM · AI VISION"
+          eyebrow="ESP32-CAM"
           icon={Camera}
-          title="Camera & Chẩn đoán bệnh"
-          subtitle="Chụp ảnh lá, nhận kết quả AI ngay lập tức."
+          title="Camera IoT"
+          subtitle="Xem camera trực tiếp và đặt lịch chụp tự động."
         />
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -438,7 +426,7 @@ export function CameraMonitorScreen() {
               <View style={styles.captureOverlay}>
                 <ActivityIndicator color={durianTheme.colors.durianYellow} size="large" />
                 <Text style={styles.captureLabel}>
-                  {captureStep === "capturing" ? "Đang chụp ảnh..." : "Đang phân tích AI..."}
+                  Đang chụp ảnh...
                 </Text>
               </View>
             )}
@@ -472,35 +460,10 @@ export function CameraMonitorScreen() {
             style={({ pressed }) => [styles.captureBtn, pressed && styles.pressed, isCapturing && styles.disabled]}
           >
             {isCapturing
-              ? <><Loader2 color="#fff" size={16} /><Text style={styles.captureBtnText}>Đang xử lý...</Text></>
+              ? <><Loader2 color="#fff" size={16} /><Text style={styles.captureBtnText}>Đang chụp...</Text></>
               : <><Camera color="#fff" size={16} /><Text style={styles.captureBtnText}>Chụp hình ngay</Text></>
             }
           </Pressable>
-
-          {/* Capture result banner */}
-          {captureResult && captureStep === "idle" && (() => {
-            const { ai_status, disease_detected, confidence_score, diagnosis_result } = captureResult;
-            const diag = diagnosis_result as Record<string, unknown> | null;
-            const viName = typeof diag?.vietnameseName === "string" ? diag.vietnameseName : null;
-            const isHealthy = disease_detected === "HEALTHY_LEAF";
-            const name = getDiseaseName(disease_detected, viName);
-            const pct  = confidence_score != null ? Math.round(confidence_score * 100) : null;
-            return (
-              <Pressable onPress={() => setEnlarged(captureResult)} style={[styles.resultBanner, { backgroundColor: isHealthy ? "#f0fdf4" : "#fef2f2" }]}>
-                {isHealthy
-                  ? <CheckCircle2 color="#16a34a" size={14} />
-                  : <AlertCircle color="#dc2626" size={14} />
-                }
-                <Text style={[styles.resultText, { color: isHealthy ? "#15803d" : "#991b1b", flex: 1 }]}>
-                  {ai_status === "COMPLETED"
-                    ? (isHealthy ? "Lá khỏe mạnh" : `Phát hiện: ${name}${pct != null ? ` (${pct}%)` : ""}`)
-                    : "Đã lưu ảnh — đang chờ AI phân tích"
-                  }
-                </Text>
-                <Text style={[styles.resultText, { color: durianTheme.colors.moss }]}>Chi tiết →</Text>
-              </Pressable>
-            );
-          })()}
 
           {captureError && (
             <View style={styles.errorBanner}>
@@ -509,6 +472,8 @@ export function CameraMonitorScreen() {
             </View>
           )}
         </View>
+
+        {deviceId ? <ScheduleCard key={deviceId} deviceId={deviceId} /> : null}
 
         {/* History gallery */}
         <View style={styles.historySection}>
@@ -534,8 +499,7 @@ export function CameraMonitorScreen() {
                   style={styles.thumb}
                   onPress={() => setEnlarged(cap)}
                 >
-                  <Image source={{ uri: cap.image_url }} style={styles.thumbImg} resizeMode="cover" />
-                  <DiseaseBadge capture={cap} />
+                  <Image source={captureImageSource(cap.image_url)} style={styles.thumbImg} resizeMode="cover" />
                   <Text style={styles.thumbTime} numberOfLines={1}>{formatTime(cap.captured_at)}</Text>
                 </Pressable>
               ))}
@@ -544,7 +508,7 @@ export function CameraMonitorScreen() {
         </View>
       </ScrollView>
 
-      <DiagnosisModal capture={enlarged} onClose={() => setEnlarged(null)} />
+      <PhotoModal capture={enlarged} onClose={() => setEnlarged(null)} />
 
     </SafeAreaView>
   );
@@ -576,8 +540,6 @@ const styles = StyleSheet.create({
   pressed:         { opacity: 0.8, transform: [{ scale: 0.97 }] },
   disabled:        { opacity: 0.6 },
 
-  resultBanner:    { alignItems: "center", borderRadius: 12, flexDirection: "row", gap: 8, padding: 10 },
-  resultText:      { fontSize: 12, fontWeight: "700" },
   errorBanner:     { alignItems: "center", backgroundColor: "#fef2f2", borderRadius: 12, flexDirection: "row", gap: 8, padding: 10 },
   errorText:       { color: "#dc2626", fontSize: 12, flex: 1 },
 
@@ -591,9 +553,6 @@ const styles = StyleSheet.create({
   thumb:           { backgroundColor: durianTheme.colors.surface, borderColor: "#ECE8D8", borderRadius: 14, borderWidth: 1, overflow: "hidden", width: "47%" },
   thumbImg:        { aspectRatio: 1.3, width: "100%" },
   thumbTime:       { color: durianTheme.colors.muted, fontSize: 9, padding: 6 },
-  badge:           { bottom: 0, left: 0, paddingHorizontal: 6, paddingVertical: 4, position: "absolute", right: 0 },
-  badgeText:       { color: "#fff", fontSize: 9, fontWeight: "900", textAlign: "center" },
-
   // Modal
   modalOverlay:    { backgroundColor: "rgba(0,0,0,0.7)", flex: 1, justifyContent: "flex-end" },
   modalSheet:      { backgroundColor: durianTheme.colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "92%", paddingBottom: 32 },
@@ -601,21 +560,18 @@ const styles = StyleSheet.create({
   modalTitle:      { color: durianTheme.colors.ink, fontSize: 14, fontWeight: "800" },
   modalImage:      { aspectRatio: 1.6, width: "100%" },
 
-  diagnosisCard:   { gap: 12, padding: 18 },
-  diagnosisHeader: { borderLeftColor: durianTheme.colors.moss, borderLeftWidth: 3, gap: 10, paddingLeft: 12 },
-  diseaseName:     { fontSize: 17, fontWeight: "900" },
-  confBar:         { borderRadius: 4, height: 6, overflow: "hidden", marginTop: 6 },
-  confFill:        { borderRadius: 4, height: "100%" },
-  confText:        { color: durianTheme.colors.muted, fontSize: 10, marginTop: 3 },
-  riskPill:        { alignSelf: "flex-start", borderRadius: 20, borderWidth: 1, marginTop: 4, paddingHorizontal: 10, paddingVertical: 4 },
-  riskText:        { fontSize: 11, fontWeight: "800" },
-  summary:         { color: durianTheme.colors.muted, fontSize: 13, lineHeight: 19 },
-  section:         { gap: 6 },
-  sectionTitle:    { color: durianTheme.colors.ink, fontSize: 12, fontWeight: "900", letterSpacing: 0.5, textTransform: "uppercase" },
-  bulletItem:      { color: durianTheme.colors.muted, fontSize: 12, lineHeight: 18 },
-  actionBox:       { backgroundColor: "#fef2f2", borderRadius: 12, padding: 12 },
-  aiPending:       { alignItems: "center", flexDirection: "row", gap: 10, padding: 18 },
-  aiPendingText:   { color: durianTheme.colors.muted, fontSize: 13 },
+  // Auto-capture schedule
+  scheduleHeader:  { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  scheduleHint:    { color: durianTheme.colors.muted, fontSize: 12 },
+  slotGrid:        { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  slot:            { borderColor: "#ECE8D8", borderRadius: 12, borderWidth: 1, minWidth: "30%", paddingVertical: 10, alignItems: "center", flexGrow: 1 },
+  slotActive:      { backgroundColor: durianTheme.colors.moss, borderColor: durianTheme.colors.moss },
+  slotText:        { color: durianTheme.colors.ink, fontSize: 13, fontWeight: "800" },
+  slotTextActive:  { color: "#fff" },
+  switchTrack:     { backgroundColor: "#d6d3c4", borderRadius: 14, height: 28, justifyContent: "center", padding: 3, width: 50 },
+  switchTrackOn:   { backgroundColor: durianTheme.colors.moss },
+  switchThumb:     { backgroundColor: "#fff", borderRadius: 11, height: 22, width: 22 },
+  switchThumbOn:   { alignSelf: "flex-end" },
 
   // Camera config modal
   gearBtn:         { padding: 4 },

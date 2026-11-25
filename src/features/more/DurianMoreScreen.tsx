@@ -1,5 +1,6 @@
 import {
   Bell,
+  Camera,
   ChevronRight,
   Cpu,
   FileSearch,
@@ -42,6 +43,12 @@ const productionItems: MoreItem[] = [
     href: "/(main)/sensors",
     icon: Cpu,
     title: "Cảm biến IoT",
+  },
+  {
+    description: "Xem camera trực tiếp và đặt lịch chụp tự động.",
+    href: "/(main)/camera",
+    icon: Camera,
+    title: "Camera IoT",
   },
   {
     description: "Quản lý vụ mùa và truy xuất nguồn gốc bằng QR.",

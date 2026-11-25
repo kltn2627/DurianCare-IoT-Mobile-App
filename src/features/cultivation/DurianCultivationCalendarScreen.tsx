@@ -448,7 +448,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
         }
         const farm = await createOwnedFarm({ name: farmSetupDraft.farmName.trim() });
         setSelection({ farmId: farm.id, seasonId: "", zoneId: "" });
-        setNotice("Đã tạo trang trại trên backend. Tiếp tục tạo khu canh tác.");
+        setNotice("Đã tạo trang trại. Tiếp tục tạo khu canh tác.");
       } else if (!zones.length) {
         const farmId = selection.farmId || farms[0]?.farmId;
         if (!farmId || !farmSetupDraft.zoneName.trim()) {
@@ -457,7 +457,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
         }
         const zone = await createFarmZone(farmId, { name: farmSetupDraft.zoneName.trim() });
         setSelection({ farmId, seasonId: "", zoneId: zone.id });
-        setNotice("Đã tạo khu canh tác trên backend. Tiếp tục tạo mùa vụ.");
+        setNotice("Đã tạo khu canh tác. Tiếp tục tạo mùa vụ.");
       } else {
         const farmId = selection.farmId || farms[0]?.farmId;
         const zoneId = selection.zoneId || zones[0]?.zoneId;
@@ -475,7 +475,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
           variety: farmSetupDraft.variety.trim() || null,
         });
         setSelection({ farmId, seasonId: season.id, zoneId });
-        setNotice("Đã tạo mùa vụ trên backend. Calendar, Harvest và Compliance có thể dùng ngữ cảnh này.");
+        setNotice("Đã tạo mùa vụ. Lịch chăm sóc, thu hoạch và xuất khẩu đã dùng được mùa vụ này.");
         setShowFarmSetupForm(false);
       }
       setFarmSetupDraft(defaultFarmSetupDraft);
@@ -520,7 +520,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
         title: activityDraft.title.trim(),
       });
       setShowActivityForm(false);
-      setNotice("Đã tạo công việc chăm sóc trên backend.");
+      setNotice("Đã tạo công việc chăm sóc.");
       await loadData({ silent: true });
     } catch (caught) {
       setError(friendlyError(caught, "Không thể tạo công việc."));
@@ -548,7 +548,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
       });
       setShowPlanForm(false);
       setPlanDraft(defaultPlanDraft);
-      setNotice("Đã tạo kế hoạch mùa vụ trên backend.");
+      setNotice("Đã tạo kế hoạch mùa vụ.");
       await loadData({ silent: true });
     } catch (caught) {
       setError(friendlyError(caught, "Không thể tạo kế hoạch."));
@@ -575,7 +575,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
         title: draft.title.trim(),
       });
       setSelectedActivity(updated);
-      setNotice("Đã cập nhật công việc trên backend.");
+      setNotice("Đã cập nhật công việc.");
       await loadData({ silent: true });
     } catch (caught) {
       setError(friendlyError(caught, "Không thể cập nhật công việc."));
@@ -681,7 +681,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <DurianScreenHeader eyebrow={entryPoint === "farm" ? "KHU CANH TÁC" : "LỊCH CHĂM SÓC"} icon={CalendarCheck} title={entryPoint === "farm" ? "Farm, khu & mùa vụ" : "Lịch chăm sóc vụ mùa"} subtitle={lastSyncedAt ? `Đồng bộ lúc ${lastSyncedAt}` : "Dữ liệu lấy từ backend thật"} />
+      <DurianScreenHeader eyebrow={entryPoint === "farm" ? "KHU CANH TÁC" : "LỊCH CHĂM SÓC"} icon={CalendarCheck} title={entryPoint === "farm" ? "Farm, khu & mùa vụ" : "Lịch chăm sóc vụ mùa"} subtitle={lastSyncedAt ? `Đồng bộ lúc ${lastSyncedAt}` : "Dữ liệu vườn của bạn"} />
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl colors={[durianTheme.colors.moss]} onRefresh={refresh} refreshing={refreshing} tintColor={durianTheme.colors.moss} />} showsVerticalScrollIndicator={false}>
         <ContextPanel canSetup={canManagePlan} farms={farms} loading={loading} onFarmChange={selectFarm} onOpenSetup={() => setShowFarmSetupForm(true)} onRefresh={refresh} onSeasonChange={(seasonId) => setSelection((current) => ({ ...current, seasonId }))} onZoneChange={selectZone} seasons={seasons} selection={selection} warning={warning} zones={zones} />
         {error ? <MessageCard kind="error" message={error} /> : null}
@@ -734,7 +734,7 @@ export function DurianCultivationCalendarScreen({ entryPoint = "calendar" }: { e
         {!loading && view === "more" ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Kế hoạch mùa vụ</Text>
-            <Text style={styles.sectionSubtitle}>Season được lấy từ `cultivationSeasonId` của kế hoạch/công việc backend.</Text>
+            <Text style={styles.sectionSubtitle}>Mùa vụ lấy theo kế hoạch và công việc đã tạo.</Text>
             {canManagePlan ? <Pressable onPress={() => setShowPlanForm(true)} style={styles.fullButton}><Plus color={durianTheme.colors.white} size={18} /><Text style={styles.fullButtonText}>Tạo kế hoạch theo season đang chọn</Text></Pressable> : null}
             {plans.length ? plans.map((plan) => <View key={plan.id} style={styles.planCard}><Text style={styles.planName}>{plan.name}</Text><Text style={styles.planMeta}>{formatDate(plan.startDate)} - {formatDate(plan.expectedHarvestDate)} · {plan.status}</Text><Text style={styles.planMeta}>Thị trường: {plan.targetMarketCodes.join(", ") || "Chưa có"}</Text></View>) : <EmptyState text="Chưa có kế hoạch mùa vụ trong farm/khu/season đang chọn." />}
           </View>
@@ -779,7 +779,7 @@ function CareHistoryView({ error, history, loading, onRetry }: { error: string |
       <View style={styles.sectionHeader}>
         <View style={styles.sectionCopy}>
           <Text style={styles.sectionTitle}>Lịch sử chăm sóc</Text>
-          <Text style={styles.sectionSubtitle}>Dữ liệu đọc trực tiếp từ endpoint care-history của backend theo season đang chọn.</Text>
+          <Text style={styles.sectionSubtitle}>Lịch sử chăm sóc của mùa vụ đang chọn.</Text>
         </View>
         <IconButton label="Tải lại" onPress={onRetry} />
       </View>
@@ -798,7 +798,7 @@ function CareHistoryView({ error, history, loading, onRetry }: { error: string |
               </View>
             </View>
             {activity.description ? <Text style={styles.historyBody}>{activity.description}</Text> : null}
-            {executions.length ? executions.map((execution) => <ExecutionBlock execution={execution} key={execution.id} usages={usageByExecution.get(execution.id) ?? []} />) : <Text style={styles.emptyInline}>Backend chưa ghi execution cho công việc này.</Text>}
+            {executions.length ? executions.map((execution) => <ExecutionBlock execution={execution} key={execution.id} usages={usageByExecution.get(execution.id) ?? []} />) : <Text style={styles.emptyInline}>Chưa có lần thực hiện nào cho công việc này.</Text>}
           </View>
         );
       })}
@@ -884,7 +884,7 @@ function ActivityDetailModal({ activity, canExecute, inputs, onApprove, onClose,
 }
 
 function RejectActivityModal({ draft, onChangeReason, onClose, onSubmit, submitting }: { draft: RejectDraft | null; onChangeReason: (reason: string) => void; onClose: () => void; onSubmit: () => void; submitting: boolean }) {
-  return <Modal animationType="slide" onRequestClose={onClose} transparent visible={Boolean(draft)}><View style={styles.rejectBackdrop}><View style={styles.rejectSheet}><View style={styles.sectionHeader}><View style={styles.sectionCopy}><Text style={styles.sectionTitle}>Từ chối công việc</Text><Text style={styles.sectionSubtitle}>{draft?.activity.title ?? "Công việc đang chờ duyệt"}</Text></View><Pressable disabled={submitting} onPress={onClose} style={styles.modalIconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable></View><FormInput label="Lý do từ chối" multiline onChangeText={onChangeReason} placeholder="Nhập lý do để lưu vào backend" value={draft?.reason ?? ""} /><View style={styles.modalActions}><Pressable disabled={submitting} onPress={onSubmit} style={styles.fullButtonDanger}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : null}<Text style={styles.fullButtonDangerText}>Xác nhận từ chối</Text></Pressable><Pressable disabled={submitting} onPress={onClose} style={styles.fullButtonSecondary}><Text style={styles.fullButtonSecondaryText}>Hủy</Text></Pressable></View></View></View></Modal>;
+  return <Modal animationType="slide" onRequestClose={onClose} transparent visible={Boolean(draft)}><View style={styles.rejectBackdrop}><View style={styles.rejectSheet}><View style={styles.sectionHeader}><View style={styles.sectionCopy}><Text style={styles.sectionTitle}>Từ chối công việc</Text><Text style={styles.sectionSubtitle}>{draft?.activity.title ?? "Công việc đang chờ duyệt"}</Text></View><Pressable disabled={submitting} onPress={onClose} style={styles.modalIconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable></View><FormInput label="Lý do từ chối" multiline onChangeText={onChangeReason} placeholder="Nhập lý do để lưu" value={draft?.reason ?? ""} /><View style={styles.modalActions}><Pressable disabled={submitting} onPress={onSubmit} style={styles.fullButtonDanger}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : null}<Text style={styles.fullButtonDangerText}>Xác nhận từ chối</Text></Pressable><Pressable disabled={submitting} onPress={onClose} style={styles.fullButtonSecondary}><Text style={styles.fullButtonSecondaryText}>Hủy</Text></Pressable></View></View></View></Modal>;
 }
 
 function FarmSetupModal({ draft, farms, onChange, onClose, onSubmit, selection, submitting, visible, zones }: { draft: FarmSetupDraft; farms: CareFarmOption[]; onChange: (draft: FarmSetupDraft) => void; onClose: () => void; onSubmit: () => void; selection: CareFoundationSelection; submitting: boolean; visible: boolean; zones: CareZoneOption[] }) {
@@ -895,11 +895,11 @@ function FarmSetupModal({ draft, farms, onChange, onClose, onSubmit, selection, 
 }
 
 function ActivityFormModal({ draft, inputs, onChange, onClose, onSubmit, plans, submitting, visible }: { draft: ActivityDraft; inputs: AgriculturalInput[]; onChange: (draft: ActivityDraft) => void; onClose: () => void; onSubmit: () => void; plans: CultivationPlan[]; submitting: boolean; visible: boolean }) {
-  return <Modal animationType="slide" onRequestClose={onClose} visible={visible}><SafeAreaView style={styles.modalSafeArea}><View style={styles.modalHeader}><Pressable onPress={onClose} style={styles.modalIconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable><Text style={styles.modalTitle}>Tạo công việc</Text><View style={styles.modalIconButton} /></View><ScrollView contentContainerStyle={styles.modalContent}>{!plans.length ? <EmptyState text="Chưa có kế hoạch mùa vụ thật trong ngữ cảnh đang chọn, nên chưa thể tạo công việc." /> : <View style={styles.formCard}><SelectorRow emptyText="Chưa có kế hoạch." label="Kế hoạch" onChange={(planId) => onChange({ ...draft, planId })} options={plans.map((plan) => ({ id: plan.id, label: plan.name }))} selectedId={draft.planId} /><SelectorRow emptyText="Không có loại công việc." label="Loại công việc" onChange={(activityType) => onChange({ ...draft, activityType: activityType as ActivityType })} options={activityTypes.map((type) => ({ id: type, label: activityTypeLabels[type] }))} selectedId={draft.activityType} /><FormInput label="Tên công việc" onChangeText={(title) => onChange({ ...draft, title })} value={draft.title} /><FormInput label="Mô tả" multiline onChangeText={(description) => onChange({ ...draft, description })} value={draft.description} /><FormInput label="Bắt đầu (YYYY-MM-DDTHH:mm)" onChangeText={(scheduledStartAt) => onChange({ ...draft, scheduledStartAt })} placeholder="2026-08-12T07:30" value={draft.scheduledStartAt} /><FormInput label="Kết thúc (YYYY-MM-DDTHH:mm)" onChangeText={(scheduledEndAt) => onChange({ ...draft, scheduledEndAt })} placeholder="2026-08-12T09:00" value={draft.scheduledEndAt} />{draft.activityType === "CHEMICAL_TREATMENT" ? <SelectorRow emptyText="Chưa tải được vật tư đã xác minh." label="Vật tư hóa chất" onChange={(inputId) => onChange({ ...draft, selectedInputIds: draft.selectedInputIds.includes(inputId) ? draft.selectedInputIds.filter((id) => id !== inputId) : [...draft.selectedInputIds, inputId] })} options={inputs.map((input) => ({ id: input.id, label: input.productName }))} selectedId={draft.selectedInputIds[0] ?? ""} /> : null}<Pressable disabled={submitting} onPress={onSubmit} style={styles.fullButton}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Plus color={durianTheme.colors.white} size={18} />}<Text style={styles.fullButtonText}>Tạo công việc trên backend</Text></Pressable></View>}</ScrollView></SafeAreaView></Modal>;
+  return <Modal animationType="slide" onRequestClose={onClose} visible={visible}><SafeAreaView style={styles.modalSafeArea}><View style={styles.modalHeader}><Pressable onPress={onClose} style={styles.modalIconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable><Text style={styles.modalTitle}>Tạo công việc</Text><View style={styles.modalIconButton} /></View><ScrollView contentContainerStyle={styles.modalContent}>{!plans.length ? <EmptyState text="Chưa có kế hoạch mùa vụ thật trong ngữ cảnh đang chọn, nên chưa thể tạo công việc." /> : <View style={styles.formCard}><SelectorRow emptyText="Chưa có kế hoạch." label="Kế hoạch" onChange={(planId) => onChange({ ...draft, planId })} options={plans.map((plan) => ({ id: plan.id, label: plan.name }))} selectedId={draft.planId} /><SelectorRow emptyText="Không có loại công việc." label="Loại công việc" onChange={(activityType) => onChange({ ...draft, activityType: activityType as ActivityType })} options={activityTypes.map((type) => ({ id: type, label: activityTypeLabels[type] }))} selectedId={draft.activityType} /><FormInput label="Tên công việc" onChangeText={(title) => onChange({ ...draft, title })} value={draft.title} /><FormInput label="Mô tả" multiline onChangeText={(description) => onChange({ ...draft, description })} value={draft.description} /><FormInput label="Bắt đầu (YYYY-MM-DDTHH:mm)" onChangeText={(scheduledStartAt) => onChange({ ...draft, scheduledStartAt })} placeholder="2026-08-12T07:30" value={draft.scheduledStartAt} /><FormInput label="Kết thúc (YYYY-MM-DDTHH:mm)" onChangeText={(scheduledEndAt) => onChange({ ...draft, scheduledEndAt })} placeholder="2026-08-12T09:00" value={draft.scheduledEndAt} />{draft.activityType === "CHEMICAL_TREATMENT" ? <SelectorRow emptyText="Chưa tải được vật tư đã xác minh." label="Vật tư hóa chất" onChange={(inputId) => onChange({ ...draft, selectedInputIds: draft.selectedInputIds.includes(inputId) ? draft.selectedInputIds.filter((id) => id !== inputId) : [...draft.selectedInputIds, inputId] })} options={inputs.map((input) => ({ id: input.id, label: input.productName }))} selectedId={draft.selectedInputIds[0] ?? ""} /> : null}<Pressable disabled={submitting} onPress={onSubmit} style={styles.fullButton}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Plus color={durianTheme.colors.white} size={18} />}<Text style={styles.fullButtonText}>Tạo công việc</Text></Pressable></View>}</ScrollView></SafeAreaView></Modal>;
 }
 
 function PlanFormModal({ draft, onChange, onClose, onSubmit, selection, submitting, visible }: { draft: PlanDraft; onChange: (draft: PlanDraft) => void; onClose: () => void; onSubmit: () => void; selection: CareFoundationSelection; submitting: boolean; visible: boolean }) {
-  return <Modal animationType="slide" onRequestClose={onClose} visible={visible}><SafeAreaView style={styles.modalSafeArea}><View style={styles.modalHeader}><Pressable onPress={onClose} style={styles.modalIconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable><Text style={styles.modalTitle}>Tạo kế hoạch</Text><View style={styles.modalIconButton} /></View><ScrollView contentContainerStyle={styles.modalContent}>{!selection.farmId || !selection.zoneId || !selection.seasonId ? <EmptyState text="Backend chưa có đủ farm/khu/season thật để tạo kế hoạch từ Mobile." /> : <View style={styles.formCard}><InfoRow label="Farm ID" value={selection.farmId} /><InfoRow label="Khu ID" value={selection.zoneId} /><InfoRow label="Season ID" value={selection.seasonId} /><FormInput label="Tên kế hoạch" onChangeText={(name) => onChange({ ...draft, name })} value={draft.name} /><FormInput label="Ngày bắt đầu (YYYY-MM-DD)" onChangeText={(startDate) => onChange({ ...draft, startDate })} placeholder="2026-08-12" value={draft.startDate} /><FormInput label="Ngày thu hoạch dự kiến" onChangeText={(expectedHarvestDate) => onChange({ ...draft, expectedHarvestDate })} placeholder="2026-12-20" value={draft.expectedHarvestDate} /><FormInput label="Thị trường mục tiêu" onChangeText={(targetMarketCodes) => onChange({ ...draft, targetMarketCodes })} value={draft.targetMarketCodes} /><Pressable disabled={submitting} onPress={onSubmit} style={styles.fullButton}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Plus color={durianTheme.colors.white} size={18} />}<Text style={styles.fullButtonText}>Tạo kế hoạch trên backend</Text></Pressable></View>}</ScrollView></SafeAreaView></Modal>;
+  return <Modal animationType="slide" onRequestClose={onClose} visible={visible}><SafeAreaView style={styles.modalSafeArea}><View style={styles.modalHeader}><Pressable onPress={onClose} style={styles.modalIconButton}><X color={durianTheme.colors.ink} size={20} /></Pressable><Text style={styles.modalTitle}>Tạo kế hoạch</Text><View style={styles.modalIconButton} /></View><ScrollView contentContainerStyle={styles.modalContent}>{!selection.farmId || !selection.zoneId || !selection.seasonId ? <EmptyState text="Chưa có đủ trang trại, khu canh tác và mùa vụ để tạo kế hoạch." /> : <View style={styles.formCard}><InfoRow label="Farm ID" value={selection.farmId} /><InfoRow label="Khu ID" value={selection.zoneId} /><InfoRow label="Season ID" value={selection.seasonId} /><FormInput label="Tên kế hoạch" onChangeText={(name) => onChange({ ...draft, name })} value={draft.name} /><FormInput label="Ngày bắt đầu (YYYY-MM-DD)" onChangeText={(startDate) => onChange({ ...draft, startDate })} placeholder="2026-08-12" value={draft.startDate} /><FormInput label="Ngày thu hoạch dự kiến" onChangeText={(expectedHarvestDate) => onChange({ ...draft, expectedHarvestDate })} placeholder="2026-12-20" value={draft.expectedHarvestDate} /><FormInput label="Thị trường mục tiêu" onChangeText={(targetMarketCodes) => onChange({ ...draft, targetMarketCodes })} value={draft.targetMarketCodes} /><Pressable disabled={submitting} onPress={onSubmit} style={styles.fullButton}>{submitting ? <ActivityIndicator color={durianTheme.colors.white} /> : <Plus color={durianTheme.colors.white} size={18} />}<Text style={styles.fullButtonText}>Tạo kế hoạch</Text></Pressable></View>}</ScrollView></SafeAreaView></Modal>;
 }
 
 function SummaryCard({ label, value, warning }: { label: string; value: string; warning?: boolean }) {
@@ -923,7 +923,7 @@ function IconButton({ label, onPress }: { label: string; onPress: () => void }) 
 }
 
 function LoadingCard() {
-  return <View style={styles.loadingCard}><LoaderCircle color={durianTheme.colors.moss} size={24} /><Text style={styles.loadingText}>Đang tải dữ liệu thật từ backend...</Text></View>;
+  return <View style={styles.loadingCard}><LoaderCircle color={durianTheme.colors.moss} size={24} /><Text style={styles.loadingText}>Đang tải dữ liệu...</Text></View>;
 }
 
 function EmptyState({ text }: { text: string }) {

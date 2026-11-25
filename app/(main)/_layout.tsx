@@ -86,27 +86,29 @@ export default function DurianCareMainTabs() {
   }
 
   return (
-    <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <DurianBottomTabBar {...props} />}>
+    <Tabs backBehavior="history" screenOptions={{ headerShown: false }} tabBar={(props) => <DurianBottomTabBar {...props} />}>
       <Tabs.Screen name="index" options={{ title: "Tổng quan" }} />
       <Tabs.Screen name="farm" options={{ title: "Khu canh tác" }} />
       <Tabs.Screen name="calendar" options={{ title: "Lịch chăm sóc" }} />
       <Tabs.Screen name="scanner" options={{ title: "Phân tích AI" }} />
       <Tabs.Screen name="more" options={{ title: "Thêm" }} />
 
-      <Tabs.Screen name="authorization" options={{ href: null }} />
-      <Tabs.Screen name="chat" options={{ href: null }} />
-      <Tabs.Screen name="community" options={{ href: null }} />
-      <Tabs.Screen name="camera" options={{ href: null }} />
-      <Tabs.Screen name="device-setup" options={{ href: null }} />
-      <Tabs.Screen name="export-compliance" options={{ href: null }} />
-      <Tabs.Screen name="knowledge" options={{ href: null }} />
-      <Tabs.Screen name="notifications" options={{ href: null }} />
-      <Tabs.Screen name="profile" options={{ href: null }} />
-      <Tabs.Screen name="qr-scan" options={{ href: null }} />
-      <Tabs.Screen name="search" options={{ href: null }} />
-      <Tabs.Screen name="sensors" options={{ href: null }} />
-      <Tabs.Screen name="traceability" options={{ href: null }} />
-      <Tabs.Screen name="tree-scan" options={{ href: null }} />
+      {/* Secondary screens: the custom tab bar shows only the five primary tabs, so these need no hiding option.
+          SDK 58 maps a null href to hidden:true, which redirects away and made these screens unreachable. */}
+      <Tabs.Screen name="authorization" />
+      <Tabs.Screen name="chat" />
+      <Tabs.Screen name="community" />
+      <Tabs.Screen name="camera" />
+      <Tabs.Screen name="device-setup" />
+      <Tabs.Screen name="export-compliance" />
+      <Tabs.Screen name="knowledge" />
+      <Tabs.Screen name="notifications" />
+      <Tabs.Screen name="profile" />
+      <Tabs.Screen name="qr-scan" />
+      <Tabs.Screen name="search" />
+      <Tabs.Screen name="sensors" />
+      <Tabs.Screen name="traceability" />
+      <Tabs.Screen name="tree-scan" />
     </Tabs>
   );
 }

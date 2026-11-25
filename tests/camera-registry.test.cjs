@@ -28,3 +28,16 @@ test("snapshot image and connection probe use authenticated Gateway API and reje
   assert.ok(source.includes('=== "image/jpeg"'));
   assert.doesNotMatch(source,/return res.status < 500/);
 });
+test("mobile camera screen offers the auto-capture schedule and no IoT AI diagnosis", () => {
+  const source = readFileSync(join(__dirname,"../src/features/camera/CameraMonitorScreen.tsx"),"utf8");
+  assert.ok(source.includes("getCameraSchedule(deviceId)"));
+  assert.ok(source.includes("updateCameraSchedule(deviceId, payload)"));
+  assert.doesNotMatch(source,/DiagnosisModal|DiseaseBadge|diagnosis_result|ai_status|Chẩn đoán/);
+  const more = readFileSync(join(__dirname,"../src/features/more/DurianMoreScreen.tsx"),"utf8");
+  assert.ok(more.includes('href: "/(main)/camera"'));
+});
+test("secondary tab screens stay reachable (SDK 58 turns href:null into a redirecting hidden tab)", () => {
+  const layout = readFileSync(join(__dirname,"../app/(main)/_layout.tsx"),"utf8");
+  assert.doesNotMatch(layout,/href:\s*null/);
+  assert.ok(layout.includes("tabBar={(props) => <DurianBottomTabBar"));
+});

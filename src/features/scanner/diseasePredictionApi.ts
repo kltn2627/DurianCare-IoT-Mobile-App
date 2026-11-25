@@ -159,7 +159,7 @@ function resolveDisease(code: string, recommendation?: DiseaseRecommendation | n
     category: "DISEASE",
     code: normalizedCode as DurianDisease["code"],
     name: recommendation?.vietnameseName || normalizedCode,
-    note: recommendation?.diseaseSummary || "Backend chưa trả mô tả ngắn cho kết quả này.",
+    note: recommendation?.diseaseSummary || "Chưa có mô tả ngắn cho kết quả này.",
   };
 }
 
